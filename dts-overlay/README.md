@@ -47,11 +47,16 @@ mechanically — no pinmux needed for power/ground).
 
 ## CONFIRMED WORKING on live hardware (2026-08-03)
 
-`lyra-zero-w-pi-spi0-lora.dts` has been compiled, applied, and verified on
-the actual Lyra board (lyra-node / 10.0.0.200):
+`lyra-zero-w-pi-header.dts` (renamed from `lyra-zero-w-pi-spi0-lora.dts` once
+scope grew beyond just SPI0/LoRa) has been compiled, applied, and verified
+on the actual Lyra board (lyra-node / 10.0.0.200):
 - `/dev/spidev0.0` exists
 - `spi0` appears in `/sys/class/spi_master/`
-- Zero dmesg errors/warnings
+- `/dev/i2c-0` exists, `i2cdetect -y 0` scans cleanly (physical pins 3/5,
+  matching the Pi's user-facing I2C1 position - for RTC/power-monitor HATs
+  like an INA3221; no device wired yet so the scan is empty, which is
+  expected)
+- Zero dmesg errors/warnings for either bus
 
 Three real bugs were found and fixed by testing live, none of which were
 obvious from the devicetree docs alone:

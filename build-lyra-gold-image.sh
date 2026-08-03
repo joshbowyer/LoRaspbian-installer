@@ -180,25 +180,27 @@ for f in "platform-ff780000.usb-usb-0:1.1:1.0:bluetooth" \
     echo 0 > "$MNT/var/lib/systemd/rfkill/$f"
 done
 
-# --- 9d. LoRa HAT SPI0 pinmux overlay (hardware-verified live on the board) -
-# Remaps the 40-pin header to the Pi's SPI0 + meshadv-HAT control-line layout.
-# See dts-overlay/README.md for the full derivation and the 3 real bugs found
+# --- 9d. Pi-compatible header pinmux overlay (hardware-verified live) -------
+# Remaps the 40-pin header to match the Raspberry Pi family layout: SPI0 +
+# meshadv-HAT control lines (pins 12/19/21/23/36/38/40) plus the user I2C bus
+# (pins 3/5, matching the Pi's I2C1 position - for RTC/power-monitor HATs).
+# See dts-overlay/README.md for the full derivation and the real bugs found
 # testing this live (cs-gpios required, pin groups need an intermediate
 # subnode, one pin per node). Compiled here on the HOST (dtc is architecture-
 # independent - no need for the qemu chroot).
-echo "Compiling and installing the LoRa HAT SPI0 pinmux overlay..."
+echo "Compiling and installing the Pi-compatible header pinmux overlay (SPI0 + I2C)..."
 if ! command -v dtc >/dev/null 2>&1; then
-    echo "WARNING: dtc (device-tree-compiler) not found on host - skipping LoRa overlay. Install with: sudo apt-get install -y device-tree-compiler"
+    echo "WARNING: dtc (device-tree-compiler) not found on host - skipping header overlay. Install with: sudo apt-get install -y device-tree-compiler"
 else
     dtc -@ -I dts -O dtb \
-        -o "$WORK/lyra-zero-w-pi-spi0-lora.dtbo" \
-        "$HERE/dts-overlay/lyra-zero-w-pi-spi0-lora.dts"
+        -o "$WORK/lyra-zero-w-pi-header.dtbo" \
+        "$HERE/dts-overlay/lyra-zero-w-pi-header.dts"
     mkdir -p "$MNT/boot/overlay-user"
-    cp "$WORK/lyra-zero-w-pi-spi0-lora.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-pi-spi0-lora.dtbo"
+    cp "$WORK/lyra-zero-w-pi-header.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-pi-header.dtbo"
     if grep -q '^user_overlays=' "$MNT/boot/armbianEnv.txt" 2>/dev/null; then
-        sed -i 's/^user_overlays=.*/&  lyra-zero-w-pi-spi0-lora/; s/^user_overlays=  /user_overlays=/' "$MNT/boot/armbianEnv.txt"
+        sed -i 's/^user_overlays=.*/&  lyra-zero-w-pi-header/; s/^user_overlays=  /user_overlays=/' "$MNT/boot/armbianEnv.txt"
     else
-        echo "user_overlays=lyra-zero-w-pi-spi0-lora" >> "$MNT/boot/armbianEnv.txt"
+        echo "user_overlays=lyra-zero-w-pi-header" >> "$MNT/boot/armbianEnv.txt"
     fi
 fi
 

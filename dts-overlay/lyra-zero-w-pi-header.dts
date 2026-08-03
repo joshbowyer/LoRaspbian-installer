@@ -2,9 +2,12 @@
 /plugin/;
 
 /*
- * Remaps the Lyra Zero W's 40-pin header to match the Raspberry Pi Zero 2W's
- * SPI0 + LoRa-HAT control lines (meshadv-style SX126x pinout), so a Pi LoRa
- * HAT plugs in and works unmodified.
+ * Remaps the Lyra Zero W's 40-pin header to match the Raspberry Pi family's
+ * (Zero 2W layout) SPI0 + LoRa-HAT control lines (meshadv-style SX126x
+ * pinout) AND user I2C bus, so Pi-designed HATs (LoRa radio, RTC, power
+ * monitor, etc.) plug in and work unmodified. This is deliberately scoped
+ * to match the Pi header broadly, not just what one specific HAT needs, so
+ * third-party HAT designs built against this pinout aren't Lyra-specific.
  *
  * All values below were extracted from the LIVE board's compiled device tree
  * (`dtc -I fs -O dts /proc/device-tree` over SSH to lyra-node / 10.0.0.200)
@@ -20,15 +23,23 @@
  *   36 IRQ     -> RM_IO29 -> GPIO1_D1 (chip 57) -> plain GPIO input (mux 0)
  *   38 BUSY    -> RM_IO17 -> GPIO0_C1 (chip 17) -> plain GPIO input (mux 0)
  *   12 RESET   -> RM_IO14 -> GPIO0_B6 (chip 14) -> plain GPIO output (mux 0)
+ *    3 I2C_SDA -> RM_IO0  -> GPIO0_A0 (chip 0)  -> <0x00 0x00 0x1f ...>
+ *    5 I2C_SCL -> RM_IO1  -> GPIO0_A1 (chip 1)  -> <0x00 0x01 0x1e ...>
+ *
+ * Physical pins 3/5 match the Raspberry Pi's user-facing "I2C1" bus position
+ * (used by nearly every off-the-shelf RTC/power-monitor HAT, e.g. DS3231,
+ * PCF8563, INA3221 breakouts). Routed here to this board's i2c0 controller
+ * (i2c@ff040000) - the bus NUMBER doesn't need to match the Pi's naming,
+ * only the physical pin POSITION does, since that's what a HAT physically
+ * plugs into. i2c2 (ff060000) is already in use on this board for the
+ * touchscreen controller - do not repurpose it. i2c1 (ff050000) is free if
+ * a second bus is ever needed.
  *
  * SPI0 (spi@ff120000) is a general-purpose SPI controller distinct from the
  * boot flash controller (fspi@ff488000, a separate node) - confirmed safe to
  * repurpose. Its stock/default pinctrl-0 uses a different, internal set of
  * fixed pins (bank0 pin19/15/16-18, mux=2) for some other on-board use; this
  * overlay REPLACES that default with the header/RM_IO-routed pins instead.
- * STILL NEEDS: physical confirmation on real hardware with the LoRa HAT
- * attached (gpioinfo/spidev check, SX126xInterface.py talking to the radio)
- * before trusting this for the gold image.
  */
 
 / {
@@ -69,6 +80,15 @@
 				lora_pi_reset: lora-pi-reset {
 					/* pin12, GPIO0_B6 (chip 14 = bank0 offset 14 = 0x0e), plain GPIO output, default high (not in reset) */
 					rockchip,pins = <0x00 0x0e 0x00 &pcfg_output_high>;
+				};
+
+				lora_pi_i2c0_sda: lora-pi-i2c0-sda {
+					/* pin3 I2C_SDA, GPIO0_A0 (RM_IO0) */
+					rockchip,pins = <0x00 0x00 0x1f &pcfg_pull_none>;
+				};
+				lora_pi_i2c0_scl: lora-pi-i2c0-scl {
+					/* pin5 I2C_SCL, GPIO0_A1 (RM_IO1) */
+					rockchip,pins = <0x00 0x01 0x1e &pcfg_pull_none>;
 				};
 			};
 		};
@@ -122,6 +142,25 @@
 				pinctrl-0 = <&lora_pi_irq &lora_pi_busy &lora_pi_reset>;
 				status = "okay";
 			};
+		};
+	};
+
+	fragment@3 {
+		target = <&i2c0>; /* i2c@ff040000 - matches Pi physical pins 3/5 (I2C1 position) */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_pi_i2c0_sda &lora_pi_i2c0_scl>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			clock-frequency = <100000>;
+			/* Add RTC / INA3221 / other I2C peripheral child nodes here once a
+			 * specific chip is chosen, e.g.:
+			 *   rtc@68 { compatible = "dallas,ds3231"; reg = <0x68>; };
+			 *   ina3221@40 { compatible = "ti,ina3221"; reg = <0x40>; };
+			 * Until then this just brings up /dev/i2c-N so i2c-tools
+			 * (i2cdetect/i2cget/i2cset, already installed by the build
+			 * script) can probe whatever's actually attached. */
 		};
 	};
 };

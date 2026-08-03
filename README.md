@@ -38,6 +38,21 @@ Output: `out/lyra-gold.img`. Flash with:
 sudo dd if=out/lyra-gold.img of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
+### Running the build under WSL
+
+Not primarily tested there, but should mostly work on **WSL2** (not WSL1 -
+WSL1 doesn't support loop devices/chroot at all). Two known gaps:
+
+- **Loop devices can be flaky on some WSL2 kernels** - if `losetup` fails
+  with "cannot find an unused loop device", try `sudo modprobe loop` or
+  `wsl --update` for a current kernel.
+- **Flashing needs a raw block device, which WSL2 doesn't pass through by
+  default.** Easiest path: build the image in WSL, then copy
+  `out/lyra-gold.img` to the Windows filesystem and flash it from Windows
+  with Balena Etcher / Rufus / Win32DiskImager instead of the `dd` command
+  above. (Or use `usbipd-win` to bind a USB SD reader into WSL2 if you want
+  to `dd` from inside WSL.)
+
 ## How it works
 
 `build-lyra-gold-image.sh` runs on your Linux dev machine (not on the

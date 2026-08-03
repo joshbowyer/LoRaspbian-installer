@@ -65,6 +65,39 @@ EOF
     netplan apply || echo "netplan apply failed - check config manually"
 fi
 
+# --- Security (unattended deployment hardening) ---------------------------
+# Skip if the build-time host script already hardened the image - only offer
+# this as a fallback/reconfigure path (mirrors the WiFi section above).
+if [ -f /etc/lyra-security-hardened ]; then
+    echo "Security hardening already applied at build time, skipping."
+elif dialog --yesno "Is this node being deployed as unattended field infrastructure (relay/repeater)? If yes, this will permanently disable WiFi and the serial console, and remove any saved WiFi credentials. Choose No for a dev/test node you'll keep local access to." 12 70 2>&1 >/dev/tty; then
+    clear
+    echo "Hardening for unattended deployment..."
+    rm -f /etc/netplan/20-wifi.yaml
+    rfkill block wifi 2>/dev/null || true
+    systemctl mask serial-getty@ttyS2.service 2>/dev/null || true
+    systemctl stop serial-getty@ttyS2.service 2>/dev/null || true
+    date -Iseconds > /etc/lyra-security-hardened
+    dialog --clear --backtitle "Lyra first-boot setup" --title "Deployed node - security guide" --msgbox "\
+WiFi is now disabled and the serial console is masked. A few practices worth\n\
+following for unattended field nodes:\n\
+\n\
+- Treat this node as an anonymous, throwaway relay - do not reuse your\n\
+  personal Reticulum identity on it.\n\
+- Don't store LXMF mailboxes or NomadNet vault data meant for you personally\n\
+  on a node you can't physically retrieve on demand.\n\
+- If this node goes missing or is recovered after being out of your control,\n\
+  treat it as compromised: rotate/revoke its identity from any allowlists\n\
+  rather than trusting it again.\n\
+- Physical security (enclosure, mounting, discretion of placement) matters\n\
+  more here than anything this wizard can configure.\n\
+\n\
+This can be reversed manually later (re-enable WiFi with 'rfkill unblock\n\
+wifi' and 'sudo systemctl unmask serial-getty@ttyS2.service') if you need\n\
+local access again." 20 74
+    clear
+fi
+
 # --- Mode selection -------------------------------------------------------
 MODE=$(dialog --clear --backtitle "Lyra first-boot setup" \
     --title "Choose network mode" \

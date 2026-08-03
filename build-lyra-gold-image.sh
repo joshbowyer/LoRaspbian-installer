@@ -42,6 +42,21 @@ if [ -z "$LYRA_WIFI_SSID" ] && [ -t 0 ]; then
     fi
 fi
 
+# Security hardening for unattended field deployment (relay/repeater nodes):
+# disables WiFi permanently, masks the serial console, and skips baking in
+# WiFi credentials even if provided above. Pass LYRA_SECURITY_HARDEN=yes for
+# automation, or leave unset in an interactive run to be prompted. Skip this
+# entirely for dev/test images you want local console/WiFi access to - the
+# on-device first-boot wizard offers this as an on-device fallback either way.
+LYRA_SECURITY_HARDEN="${LYRA_SECURITY_HARDEN-}"
+if [ -z "$LYRA_SECURITY_HARDEN" ] && [ -t 0 ]; then
+    read -r -p "Harden this image for unattended field deployment (disables WiFi + serial console permanently)? [y/N]: " _harden_answer
+    case "${_harden_answer,,}" in
+        y|yes) LYRA_SECURITY_HARDEN=yes ;;
+        *) LYRA_SECURITY_HARDEN=no ;;
+    esac
+fi
+
 # --- 1. Download (cache-friendly: skip if already present) -----------------
 if [ ! -f "$IMAGE_XZ" ]; then
     echo "Downloading base Armbian image..."
@@ -146,7 +161,9 @@ mkdir -p "$MNT/home/lyra/.reticulum"
 cp "$HERE/files/reticulum-config-base" "$MNT/home/lyra/.reticulum/config"
 
 # --- 9b. WiFi (baked in at build time, if provided above) -------------------
-if [ -n "$LYRA_WIFI_SSID" ]; then
+if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
+    echo "Security hardening enabled - skipping WiFi bake-in even if credentials were provided."
+elif [ -n "$LYRA_WIFI_SSID" ]; then
     echo "Baking WiFi credentials into the image (SSID: $LYRA_WIFI_SSID)..."
     mkdir -p "$MNT/etc/netplan"
     cat > "$MNT/etc/netplan/20-wifi.yaml" << EOF
@@ -165,20 +182,31 @@ else
     echo "No WiFi baked in - the on-device first-boot wizard will offer to configure it."
 fi
 
-# --- 9c. Permanently unblock WiFi/BT rfkill soft-block -----------------------
+# --- 9c. WiFi rfkill state ----------------------------------------------------
 # The aic8800 combo chip ships soft-blocked; systemd-rfkill persists whatever
 # state is on disk at /var/lib/systemd/rfkill/<device> across reboots, so we
-# just need to pre-seed "0" (unblocked) for the known device paths (confirmed
+# just need to pre-seed the desired state for the known device paths (confirmed
 # live on hardware: platform-ff780000.usb-usb-0:1.1:wlan and the bluetooth
 # counterparts) rather than actually calling `rfkill` here, since inside this
 # qemu chroot that would touch the HOST build machine's real rfkill state, not
-# the image's.
+# the image's. Normally unblocked (0); permanently blocked (1) for WiFi only
+# under security hardening, per the first-boot wizard's equivalent option.
 mkdir -p "$MNT/var/lib/systemd/rfkill"
-for f in "platform-ff780000.usb-usb-0:1.1:1.0:bluetooth" \
-         "platform-ff780000.usb-usb-0:1.1:wlan" \
-         "platform-wireless-bluetooth:bluetooth"; do
-    echo 0 > "$MNT/var/lib/systemd/rfkill/$f"
-done
+if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
+    echo "Security hardening enabled - permanently blocking WiFi via rfkill."
+    echo 1 > "$MNT/var/lib/systemd/rfkill/platform-ff780000.usb-usb-0:1.1:wlan"
+else
+    echo 0 > "$MNT/var/lib/systemd/rfkill/platform-ff780000.usb-usb-0:1.1:wlan"
+fi
+echo 0 > "$MNT/var/lib/systemd/rfkill/platform-ff780000.usb-usb-0:1.1:1.0:bluetooth"
+echo 0 > "$MNT/var/lib/systemd/rfkill/platform-wireless-bluetooth:bluetooth"
+
+# --- 9e. Security hardening: mask serial console, mark done ------------------
+if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
+    echo "Masking serial console for unattended deployment..."
+    chroot_run "systemctl mask serial-getty@ttyS2.service 2>/dev/null || true"
+    date -Iseconds | tee "$MNT/etc/lyra-security-hardened" >/dev/null
+fi
 
 # --- 9d. Pi-compatible header pinmux overlay (hardware-verified live) -------
 # Remaps the 40-pin header to match the Raspberry Pi family layout: SPI0 +

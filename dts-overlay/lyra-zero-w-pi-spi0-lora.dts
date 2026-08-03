@@ -1,0 +1,127 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Remaps the Lyra Zero W's 40-pin header to match the Raspberry Pi Zero 2W's
+ * SPI0 + LoRa-HAT control lines (meshadv-style SX126x pinout), so a Pi LoRa
+ * HAT plugs in and works unmodified.
+ *
+ * All values below were extracted from the LIVE board's compiled device tree
+ * (`dtc -I fs -O dts /proc/device-tree` over SSH to lyra-node / 10.0.0.200)
+ * plus the physical-pin<->RM_IO mapping confirmed against the official
+ * Luckfox pinout diagram and cross-checked with josh's own RMIO/pinctrl
+ * table for this board. No placeholder/guessed values remain.
+ *
+ * Physical pin -> function -> RM_IO -> chip GPIO pin -> rockchip,pins value
+ *   19 MOSI    -> RM_IO6  -> GPIO0_A6 (chip 6)  -> <0x00 0x06 0x53 ...>
+ *   21 MISO    -> RM_IO7  -> GPIO0_A7 (chip 7)  -> <0x00 0x07 0x54 ...>
+ *   23 SCLK    -> RM_IO8  -> GPIO0_B0 (chip 8)  -> <0x00 0x08 0x52 ...>
+ *   40 CSN0/CS -> RM_IO18 -> GPIO0_C2 (chip 18) -> <0x00 0x12 0x55 ...>
+ *   36 IRQ     -> RM_IO29 -> GPIO1_D1 (chip 57) -> plain GPIO input (mux 0)
+ *   38 BUSY    -> RM_IO17 -> GPIO0_C1 (chip 17) -> plain GPIO input (mux 0)
+ *   12 RESET   -> RM_IO14 -> GPIO0_B6 (chip 14) -> plain GPIO output (mux 0)
+ *
+ * SPI0 (spi@ff120000) is a general-purpose SPI controller distinct from the
+ * boot flash controller (fspi@ff488000, a separate node) - confirmed safe to
+ * repurpose. Its stock/default pinctrl-0 uses a different, internal set of
+ * fixed pins (bank0 pin19/15/16-18, mux=2) for some other on-board use; this
+ * overlay REPLACES that default with the header/RM_IO-routed pins instead.
+ * STILL NEEDS: physical confirmation on real hardware with the LoRa HAT
+ * attached (gpioinfo/spidev check, SX126xInterface.py talking to the radio)
+ * before trusting this for the gold image.
+ */
+
+/ {
+	fragment@0 {
+		target = <&pinctrl>;
+		__overlay__ {
+			/* Pin groups must live inside an intermediate named subnode, not
+			 * directly as children of &pinctrl - confirmed by testing on the
+			 * live board ("unable to find group for node ..." in dmesg even
+			 * after fixing the one-tuple-per-node issue). Matches the nesting
+			 * pattern used by both this board's own base tree (rm_io6 { rm-io6-
+			 * spi0-mosi {...}; }) and josh's known-working femtofox config
+			 * (spi0 { spi0m0_clk {...}; }). */
+			lora_pi {
+				lora_pi_spi0_mosi: lora-pi-spi0-mosi {
+					rockchip,pins = <0x00 0x06 0x53 &pcfg_pull_none_drv_level_3>; /* pin19 MOSI (RM_IO6) */
+				};
+				lora_pi_spi0_miso: lora-pi-spi0-miso {
+					rockchip,pins = <0x00 0x07 0x54 &pcfg_pull_none_drv_level_3>; /* pin21 MISO (RM_IO7) */
+				};
+				lora_pi_spi0_clk: lora-pi-spi0-clk {
+					rockchip,pins = <0x00 0x08 0x52 &pcfg_pull_none_drv_level_3>; /* pin23 SCLK (RM_IO8) */
+				};
+				lora_pi_spi0_cs0: lora-pi-spi0-cs0 {
+					rockchip,pins = <0x00 0x12 0x55 &pcfg_pull_none_drv_level_3>; /* pin40 CSN0 (RM_IO18) */
+				};
+
+				lora_pi_irq: lora-pi-irq {
+					/* pin36, GPIO1_D1 (chip 57 = bank1 offset 25 = 0x19), plain GPIO input */
+					rockchip,pins = <0x01 0x19 0x00 &pcfg_pull_down>;
+				};
+
+				lora_pi_busy: lora-pi-busy {
+					/* pin38, GPIO0_C1 (chip 17 = bank0 offset 17 = 0x11), plain GPIO input */
+					rockchip,pins = <0x00 0x11 0x00 &pcfg_pull_none>;
+				};
+
+				lora_pi_reset: lora-pi-reset {
+					/* pin12, GPIO0_B6 (chip 14 = bank0 offset 14 = 0x0e), plain GPIO output, default high (not in reset) */
+					rockchip,pins = <0x00 0x0e 0x00 &pcfg_output_high>;
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spi0>; /* spi@ff120000 */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_pi_spi0_mosi &lora_pi_spi0_miso &lora_pi_spi0_clk &lora_pi_spi0_cs0>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			/* Required per josh's own known-working femtofox (rv1103, same
+			 * rockchip,rk3066-spi-family driver) config: the CS pin must also
+			 * be declared as a GPIO the driver toggles in software, in addition
+			 * to being pinmux'd to the hardware CSN0 function above. Without
+			 * this the spi_master silently never registers (no dmesg output at
+			 * all) - confirmed by testing on the live board.
+			 * pin40 CSN0 = GPIO0_C2 (chip 18 = bank0 offset 18 = 0x12), active-low.
+			 */
+			cs-gpios = <&gpio0 0x12 0x01>;
+
+			lora@0 {
+				/* Userspace driver (reticulum-hat-mod's SX126xInterface.py) talks
+				 * over /dev/spidevX.Y. Matches femtofox's known-working compatible
+				 * string for this driver family (generic "spidev" alone did not
+				 * bind on this vendor kernel).
+				 */
+				compatible = "rockchip,spidev";
+				reg = <0x00>;
+				spi-max-frequency = <8000000>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/";
+		__overlay__ {
+			lora-pi-gpio-lines {
+				compatible = "gpio-consumer-placeholder"; /* documentation only, not a real binding */
+				/* IRQ/BUSY/RESET are consumed directly by SX126xInterface.py via
+				 * gpiod/sysfs using these GPIO numbers - no kernel driver needed:
+				 *   IRQ   (pin36): gpiochip1 line 25 (bank1 offset 25 / GPIO1_D1)
+				 *   BUSY  (pin38): gpiochip0 line 17 (bank0 offset 17 / GPIO0_C1)
+				 *   RESET (pin12): gpiochip0 line 14 (bank0 offset 14 / GPIO0_B6)
+				 * pinctrl-0 above just claims/mux's them; nothing else to declare.
+				 */
+				pinctrl-names = "default";
+				pinctrl-0 = <&lora_pi_irq &lora_pi_busy &lora_pi_reset>;
+				status = "okay";
+			};
+		};
+	};
+};

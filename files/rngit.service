@@ -1,0 +1,17 @@
+[Unit]
+Description=rngit daemon (git-over-Reticulum hosting)
+After=network-online.target nomadnet.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=lyra
+Group=lyra
+ExecStart=/usr/local/bin/rngit --config /home/lyra/.rngit --rnsconfig /home/lyra/.reticulum -s
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,93 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * TEMPLATE - DO NOT COMPILE AS-IS.
+ *
+ * Remaps the Lyra Zero W's 40-pin header to match the Raspberry Pi Zero 2W's
+ * SPI0 + LoRa-HAT control lines (meshadv-style SX126x pinout), so a Pi LoRa
+ * HAT plugs in and works unmodified.
+ *
+ * Every TODO_* placeholder below must be replaced with real values pulled
+ * from the live board (see dump-lyra-pinctrl.sh) or Luckfox's official
+ * devicetree source for this board. See README.md in this directory for the
+ * full target pinout table and step-by-step instructions.
+ *
+ * Physical pins this overlay must activate:
+ *   19 MOSI, 21 MISO, 23 SCLK, 40 NSS/CS, 36 IRQ/DIO1, 38 BUSY, 12 RESET
+ */
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+/* #include <dt-bindings/pinctrl/rockchip,rk3506-rmio.h> -- if present in this kernel */
+
+/ {
+	fragment@0 {
+		target = <&pinctrl>;
+		__overlay__ {
+			/* --- SPI0: MOSI (physical pin 19) --- */
+			spi0_pi_mosi: spi0-pi-mosi {
+				rockchip,pins = <TODO_BANK TODO_PIN 7 &pcfg_pull_none_drv_level_3>;
+				rockchip,rmio-pins = <0 TODO_RMIO_ID TODO_RMIO_FUNC_MOSI>;
+			};
+
+			/* --- SPI0: MISO (physical pin 21) --- */
+			spi0_pi_miso: spi0-pi-miso {
+				rockchip,pins = <TODO_BANK TODO_PIN 7 &pcfg_pull_none>;
+				rockchip,rmio-pins = <0 TODO_RMIO_ID TODO_RMIO_FUNC_MISO>;
+			};
+
+			/* --- SPI0: SCLK (physical pin 23) --- */
+			spi0_pi_sclk: spi0-pi-sclk {
+				rockchip,pins = <TODO_BANK TODO_PIN 7 &pcfg_pull_none_drv_level_3>;
+				rockchip,rmio-pins = <0 TODO_RMIO_ID TODO_RMIO_FUNC_SCLK>;
+			};
+
+			/* --- SPI0: NSS/CS0 (physical pin 40) --- */
+			spi0_pi_cs0: spi0-pi-cs0 {
+				rockchip,pins = <TODO_BANK TODO_PIN 7 &pcfg_pull_none_drv_level_3>;
+				rockchip,rmio-pins = <0 TODO_RMIO_ID TODO_RMIO_FUNC_CS>;
+			};
+
+			/* --- LoRa IRQ/DIO1 as plain GPIO input (physical pin 36) --- */
+			lora_pi_irq: lora-pi-irq {
+				rockchip,pins = <TODO_BANK TODO_PIN 0 &pcfg_pull_down>; /* mux=0: GPIO */
+			};
+
+			/* --- LoRa BUSY as plain GPIO input (physical pin 38) --- */
+			lora_pi_busy: lora-pi-busy {
+				rockchip,pins = <TODO_BANK TODO_PIN 0 &pcfg_pull_none>;
+			};
+
+			/* --- LoRa RESET as plain GPIO output (physical pin 12) --- */
+			lora_pi_reset: lora-pi-reset {
+				rockchip,pins = <TODO_BANK TODO_PIN 0 &pcfg_pull_none>;
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spi0>; /* TODO: confirm which SPI controller instance this maps to */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&spi0_pi_mosi &spi0_pi_miso &spi0_pi_sclk &spi0_pi_cs0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			lora@0 {
+				compatible = "semtech,sx1262"; /* placeholder, driver is userspace (SX126xInterface.py) */
+				reg = <0>;
+				spi-max-frequency = <8000000>;
+				status = "okay";
+			};
+		};
+	};
+
+	/* Expose IRQ/BUSY/RESET as sysfs-gpio or gpio-keys equivalent, OR just
+	 * reference the raw GPIO numbers directly in reticulum-config-base's
+	 * [[SX126xInterface]] block once known - whichever reticulum-hat-mod's
+	 * SX126xInterface.py expects (check that driver's config for whether it
+	 * wants BCM-style numbers, /sys/class/gpio paths, or gpiod line names).
+	 */
+};

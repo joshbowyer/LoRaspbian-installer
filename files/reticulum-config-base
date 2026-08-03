@@ -1,0 +1,45 @@
+# Reticulum config for Lyra Zero W gold image.
+#
+# LoRa (SX126x) is configured via the reticulum-hat-mod driver's profile
+# system: platform=luckfox-lyra-zero-w (this board's GPIO/SPI wiring, defined
+# in the sx126x_platforms overlay deployed alongside this config) +
+# radio_board=meshadv-pi-hat-v1.1 (the HAT's physical pin wiring, bundled in
+# the driver itself). See lyra-gold-image/dts-overlay/README.md for how the
+# pin/GPIO mapping was derived and hardware-verified. NOTE: the pin/GPIO
+# mapping and SPI0 bus itself are hardware-verified; end-to-end radio
+# behavior through this specific HAT has not been tested yet (no physical
+# HAT existed at time of writing) - if a different HAT/pinout ships, update
+# the `radio_board` line (and/or the sx126x_platforms file if the SBC-side
+# wiring changes) rather than editing this block's radio parameters.
+#
+# No TCP peer configured here, since we don't know the deployment network in
+# advance - the first-boot wizard's WiFi step handles connectivity; add a
+# [[Peer]]-style TCPClientInterface manually per-deployment if a known
+# always-on peer (like Claw) should be reachable by default.
+
+[reticulum]
+  enable_transport = No
+  share_instance = Yes
+  respond_to_probes = Yes
+
+[logging]
+  loglevel = 4
+
+[interfaces]
+
+  [[TCP Server on LAN]]
+    type = TCPServerInterface
+    interface_enabled = True
+    listen_ip = 0.0.0.0
+    listen_port = 4242
+
+  [[MeshAdv LoRa]]
+    type = SX126xInterface
+    interface_enabled = True
+    frequency = 915000000
+    bandwidth = 125000
+    spreadingfactor = 8
+    codingrate = 5
+    txpower = 22
+    platform = luckfox-lyra-zero-w
+    radio_board = meshadv-pi-hat-v1.1

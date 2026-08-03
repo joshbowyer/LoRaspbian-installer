@@ -1,0 +1,13 @@
+[Unit]
+Description=Lyra gold-image first-boot setup (identity wipe only - interactive wizard runs on first SSH/console login instead, see /etc/profile.d/00-lyra-first-boot.sh)
+After=network-online.target
+Before=nomadnet.service rngit.service meshtasticd.service
+ConditionPathExists=!/etc/lyra-first-boot-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lyra-first-boot-wizard.sh --noninteractive-only
+
+[Install]
+WantedBy=multi-user.target

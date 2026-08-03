@@ -1,0 +1,19 @@
+[Unit]
+Description=NomadNet daemon (Reticulum node: NomadNet + LXMF + page hosting)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=lyra
+Group=lyra
+ExecStart=/usr/local/bin/nomadnet -d --config /home/lyra/.nomadnetwork --rnsconfig /home/lyra/.reticulum
+Restart=on-failure
+RestartSec=5
+
+SupplementaryGroups=spi gpio dialout
+
+[Install]
+WantedBy=multi-user.target

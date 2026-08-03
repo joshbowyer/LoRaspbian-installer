@@ -1,0 +1,7 @@
+# Build workspace: downloaded base images, loop-mounted chroot (contains
+# LIVE bind mounts of the host's /dev, /proc, /sys during a build - must
+# never be tracked, walking these can hang tools that do full-tree scans).
+work/
+
+# Build output
+out/

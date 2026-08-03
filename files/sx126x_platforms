@@ -1,0 +1,35 @@
+# SX126x interface driver platform overlay for the Luckfox Lyra Zero W.
+#
+# Loaded automatically by SX126xInterface.py from
+# ~/.reticulum/interfaces/sx126x_platforms (this file gets copied there by
+# build-lyra-gold-image.sh). Adds a new "platform" alongside the driver's
+# bundled raspberry-pi / luckfox-pico profiles, so the existing
+# "meshadv-pi-hat-v1.1" radio_board profile (physical pins 12/32/33/36/38/40)
+# can be used unmodified on this board.
+#
+# header_pin_to_line values were derived from a live device-tree dump of the
+# actual board (dtc -I fs -O dts /proc/device-tree) cross-referenced against
+# the official Luckfox pinout diagram - see
+# lyra-gold-image/dts-overlay/README.md for the full derivation. Physical pin
+# -> (gpiochip, line) mapping:
+#   12 (RESET) -> gpiochip0 line 14  (GPIO0_B6 / RM_IO14)
+#   32 (RXEN)  -> gpiochip1 line 26  (GPIO1_D2 / RM_IO30, chip pin 58, bank1 offset 58-32=26)
+#   33 (TXEN)  -> gpiochip1 line 18  (GPIO1_C2 / RM_IO27, chip pin 50, bank1 offset 50-32=18)
+#   36 (IRQ)   -> gpiochip1 line 25  (GPIO1_D1 / RM_IO29, chip pin 57, bank1 offset 57-32=25)
+#   38 (BUSY)  -> gpiochip0 line 17  (GPIO0_C1 / RM_IO17)
+#   40 (CS)    -> gpiochip0 line 18  (GPIO0_C2 / RM_IO18 - bit-banged CS via
+#                 cs-gpios in the devicetree overlay, same approach the
+#                 bundled raspberry-pi profile uses for the MeshAdv HAT)
+#
+# NOT yet physically verified with a HAT attached (no LoRa HAT for this board
+# existed at time of writing) - the pin/GPIO mapping IS hardware-verified
+# (SPI0 + GPIO lines confirmed live via dtoverlay testing), but end-to-end
+# radio behavior through this profile has not been tested yet.
+
+[platforms]
+  [[luckfox-lyra-zero-w]]
+    platform_name = luckfox-lyra-zero-w
+    platform_version = 1
+    gpiochip = gpiochip0
+    spi_bus_default = 0
+    header_pin_to_line = {"12": ["gpiochip0", 14], "32": ["gpiochip1", 26], "33": ["gpiochip1", 18], "36": ["gpiochip1", 25], "38": ["gpiochip0", 17], "40": ["gpiochip0", 18]}

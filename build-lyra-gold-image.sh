@@ -69,10 +69,26 @@ echo "Decompressing to a fresh working copy..."
 rm -f "$IMAGE_RAW"
 xz -dc "$IMAGE_XZ" > "$IMAGE_RAW"
 
+# --- 1b. Grow the image before mounting --------------------------------------
+# The stock Armbian minimal image ships with a tiny root partition (~1.6GB,
+# already ~1.5GB used out of the box) - Armbian normally auto-grows this on
+# the BOARD's own first real boot (growpart+resize2fs service), but our
+# chroot-based build happens before that ever runs, so we're stuck with the
+# original tiny size unless we grow it ourselves first. Confirmed live: stock
+# image left ~14MB free, nowhere near enough for python3-dev/build-essential/
+# rustc/cargo/meshtasticd. Pad by LYRA_IMAGE_GROW_GB (default 4) extra GB.
+LYRA_IMAGE_GROW_GB="${LYRA_IMAGE_GROW_GB:-4}"
+echo "Growing image by ${LYRA_IMAGE_GROW_GB}GB to make room for packages..."
+truncate -s "+${LYRA_IMAGE_GROW_GB}G" "$IMAGE_RAW"
+
 # --- 2. Loop-mount ----------------------------------------------------------
 mkdir -p "$MNT"
 LOOPDEV=$(losetup -Pf --show "$IMAGE_RAW")
 echo "Loop device: $LOOPDEV"
+
+echo "Expanding partition 1 and filesystem to use the new space..."
+growpart "$LOOPDEV" 1
+resize2fs "${LOOPDEV}p1"
 
 cleanup() {
     set +e
@@ -103,7 +119,8 @@ chroot_run() {
 # --- 4. Base packages --------------------------------------------------------
 echo "Installing base packages..."
 chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq"
-chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev git i2c-tools dialog whiptail rustc cargo"
+chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev git i2c-tools dialog whiptail rustc cargo vim"
+chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get purge -y -qq nano 2>/dev/null || true"
 
 # --- 5. User + SSH ------------------------------------------------------------
 echo "Creating lyra user..."
@@ -152,9 +169,39 @@ cp "$HERE/files/rngit.service" "$MNT/etc/systemd/system/rngit.service"
 cp "$HERE/files/first-boot.service" "$MNT/etc/systemd/system/first-boot.service"
 cp "$HERE/files/first-boot-wizard.sh" "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
 chmod +x "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
-cp "$HERE/files/00-lyra-first-boot.sh" "$MNT/etc/profile.d/00-lyra-first-boot.sh"
-chmod +x "$MNT/etc/profile.d/00-lyra-first-boot.sh"
+# The full interactive wizard (mode/board/HAT selection) does NOT auto-launch
+# on login - it's mentioned in the MOTD instead, and run manually via
+# `sudo lyra-setup`. Only the noninteractive identity-wipe phase (invoked by
+# first-boot.service below) still runs automatically at every first boot.
+ln -sf /usr/local/sbin/lyra-first-boot-wizard.sh "$MNT/usr/local/bin/lyra-setup"
+cp "$HERE/files/10-lyra-setup-motd" "$MNT/etc/update-motd.d/10-lyra-setup-motd"
+chmod +x "$MNT/etc/update-motd.d/10-lyra-setup-motd"
 chroot_run "systemctl enable nomadnet.service rngit.service first-boot.service"
+# Disable (don't uninstall) the graphical boot target - this is a headless node.
+chroot_run "systemctl set-default multi-user.target"
+
+# SSH host keys: ensure they're generated fresh per-card at first boot rather
+# than possibly missing (Armbian's own firstrun key-generation step appears to
+# get skipped since we pre-grow the partition ourselves at build time instead
+# of letting Armbian's firstrun growpart+keygen sequence do it) or shared
+# across every flashed card.
+cp "$HERE/files/lyra-ssh-hostkeys.service" "$MNT/etc/systemd/system/lyra-ssh-hostkeys.service"
+chroot_run "rm -f /etc/ssh/ssh_host_*"
+chroot_run "systemctl enable lyra-ssh-hostkeys.service"
+mkdir -p "$MNT/etc/systemd/system/ssh.service.d"
+cat > "$MNT/etc/systemd/system/ssh.service.d/override.conf" << 'EOF'
+[Unit]
+After=lyra-ssh-hostkeys.service
+Wants=lyra-ssh-hostkeys.service
+EOF
+
+# systemd-networkd/netplan WiFi boot-race workaround (confirmed live on
+# hardware: networkd reads its generated .network files too early on first
+# boot, fails permission-denied, and never retries; a later restart picks up
+# the config immediately). See dts-overlay-unrelated note in the .service
+# file itself for full detail.
+cp "$HERE/files/lyra-networkd-wifi-race-workaround.service" "$MNT/etc/systemd/system/lyra-networkd-wifi-race-workaround.service"
+chroot_run "systemctl enable lyra-networkd-wifi-race-workaround.service"
 
 # --- 9. Base Reticulum config (no LoRa interface yet - pinmux pending) ------
 mkdir -p "$MNT/home/lyra/.reticulum"

@@ -1,0 +1,11 @@
+#!/bin/sh
+# update-motd.d script: reminds the user how to run the Reticulum/Meshtastic
+# setup wizard manually, instead of it auto-launching on every login.
+# Harmless no-op once setup is marked done.
+
+if [ ! -f /etc/lyra-first-boot-done ]; then
+    echo ""
+    echo "  Lyra node is not yet configured for Reticulum or Meshtastic."
+    echo "  Run 'sudo lyra-setup' to choose a mode, board, and LoRa HAT."
+    echo ""
+fi

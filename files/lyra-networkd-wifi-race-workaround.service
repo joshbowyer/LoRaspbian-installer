@@ -1,0 +1,19 @@
+[Unit]
+Description=Restart systemd-networkd once at boot to pick up netplan wifi config it missed (boot-order race workaround)
+# Observed live: systemd-networkd starts and reads its generated .network
+# files too early on first boot (before the WiFi netplan config is fully
+# readable), fails silently ("Permission denied", falls back to
+# state=unmanaged), and never retries. A plain `systemctl restart
+# systemd-networkd` afterwards immediately picks up the (by-then valid)
+# config and gets a DHCPv4 lease - confirmed live on hardware. This unit
+# reproduces that fix automatically instead of requiring a manual restart.
+After=systemd-networkd.service network.target
+Wants=systemd-networkd.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/systemctl try-restart systemd-networkd.service
+
+[Install]
+WantedBy=multi-user.target

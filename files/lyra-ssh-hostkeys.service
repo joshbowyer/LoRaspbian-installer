@@ -1,0 +1,13 @@
+[Unit]
+Description=Ensure unique SSH host keys exist before sshd starts (per-card, not baked into the gold image)
+DefaultDependencies=no
+Before=ssh.service sshd.service
+ConditionPathExists=!/etc/ssh/ssh_host_rsa_key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

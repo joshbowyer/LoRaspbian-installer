@@ -1,24 +1,28 @@
 # LoRaspbian Installer
 
-Builds a ready-to-flash SD card image for off-grid [Reticulum](https://reticulum.network/)
-mesh nodes on the **Luckfox Lyra Zero W** (RK3506B), with the board's 40-pin
-header remapped to match the Raspberry Pi's SPI0 + LoRa-HAT control-line
-layout - so an existing "meshadv"-style SX126x LoRa HAT built for a Pi plugs
-in and works, unmodified.
+Builds a ready-to-flash SD card image for off-grid LoRa mesh nodes on the
+**Luckfox Lyra Zero W** (RK3506B), running either
+[Reticulum](https://reticulum.network/) (NomadNet + RNS) **or**
+[Meshtastic](https://meshtastic.org/) - chosen at first boot, mutually
+exclusive. The board's 40-pin header is remapped to match the Raspberry
+Pi's SPI0 + LoRa-HAT control-line layout, so an existing "meshadv"-style
+SX126x LoRa HAT built for a Pi plugs in and works, unmodified, under either
+mesh stack.
 
 The name is a nod to Raspbian - the goal is the same "flash it, boot it, it
-just works" experience, for a LoRa + Reticulum mesh node instead of a general
-desktop.
+just works" experience, for a LoRa mesh node (Reticulum or Meshtastic)
+instead of a general desktop.
 
 ## What this produces
 
 A single `lyra-gold.img` you `dd` to an SD card. On first boot the board:
 - joins WiFi (either baked in at build time, or via an on-device setup wizard)
-- runs NomadNet + Reticulum over LoRa (via the remapped SPI0 + meshadv HAT
-  pinout) and TCP (LAN)
-- generates a fresh identity per card (no two flashed cards share a hash)
-- optionally runs Meshtastic instead (installed but disabled by default -
-  chosen via the first-boot wizard)
+- prompts you to choose **Reticulum or Meshtastic** (mutually exclusive - both
+  are installed on the image, only one runs at a time)
+- if Reticulum: runs NomadNet + RNS over LoRa (via the remapped SPI0 +
+  meshadv HAT pinout) and TCP (LAN), with a fresh identity per card (no two
+  flashed cards share a hash)
+- if Meshtastic: runs `meshtasticd` over the same remapped SPI0/LoRa pinout
 
 ## Quick start
 
@@ -67,7 +71,7 @@ files/                     # payloads copied into the image during build
   first-boot-wizard.sh     # on-device first-boot setup (WiFi fallback, mode/board select)
   *.service                # systemd units for nomadnet/rngit/first-boot
 dts-overlay/                # devicetree overlay remapping the 40-pin header
-  lyra-zero-w-pi-spi0-lora.dts   # the overlay itself (compiled + applied by the build script)
+  lyra-zero-w-pi-header.dts      # the overlay itself (compiled + applied by the build script)
   README.md                      # full derivation + hardware-tested gotchas
   dump-lyra-pinctrl.sh           # helper to inspect a board's live pinctrl state
 ```

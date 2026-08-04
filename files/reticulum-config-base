@@ -43,3 +43,12 @@
     txpower = 22
     platform = luckfox-lyra-zero-w
     radio_board = meshadv-pi-hat-v1.1
+    # The meshadv-pi-hat-v1.1 profile defaults to bit-banged CS via libgpiod
+    # (needed on Raspberry Pi's spi0-0cs setup, which has no hardware CS
+    # pin). This board's LoRa pinmux overlay wires physical pin 40 as the
+    # kernel's REAL hardware SPI0 CS0 instead, so bit-banging it collides
+    # with the kernel's own claim on that line ("Device or resource busy").
+    # Override to defer CS to spidev's hardware CE path. Hardware-verified
+    # working end-to-end (SX126xInterface comes up, stable across restarts)
+    # on 2026-08-04.
+    pin_cs = -1

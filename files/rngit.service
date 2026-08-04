@@ -9,6 +9,7 @@ StartLimitBurst=5
 Type=simple
 User=lyra
 Group=lyra
+SupplementaryGroups=spi gpio dialout
 ExecStart=/usr/local/bin/rngit --config /home/lyra/.rngit --rnsconfig /home/lyra/.reticulum -s
 Restart=on-failure
 RestartSec=5

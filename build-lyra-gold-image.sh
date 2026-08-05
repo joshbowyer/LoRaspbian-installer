@@ -163,6 +163,13 @@ chroot_run "curl -fsSL https://download.opensuse.org/repositories/network:Meshta
 chroot_run "apt-get update -qq && apt-get install -y -qq meshtasticd"
 chroot_run "systemctl disable meshtasticd 2>/dev/null || true"
 
+# --- 7b. i2pd (I2P router for Reticulum's native I2PInterface) ---------------
+echo "Installing i2pd (I2P router for the I2PInterface)..."
+chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq i2pd"
+# The packaged setting is commented as '# enabled = true'. Restrict both
+# normalization substitutions to [sam] so no other i2pd service is changed.
+chroot_run "sed -i '/^\[sam\]/,/^\[/ { s/^[[:space:]]*#[[:space:]]*enabled[[:space:]]*=.*/enabled = true/; s/^[[:space:]]*enabled[[:space:]]*=.*/enabled = true/; }' /etc/i2pd/i2pd.conf"
+
 # --- 8. systemd services ------------------------------------------------------
 echo "Deploying systemd services..."
 cp "$HERE/files/nomadnet.service" "$MNT/etc/systemd/system/nomadnet.service"

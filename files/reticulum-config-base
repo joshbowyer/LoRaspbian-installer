@@ -52,3 +52,17 @@
     # working end-to-end (SX126xInterface comes up, stable across restarts)
     # on 2026-08-04.
     pin_cs = -1
+
+  [[I2P]]
+    # Native Reticulum I2PInterface. Connects to a local i2pd SAM bridge
+    # (127.0.0.1:7656, hardcoded default in RNS.vendor.i2plib - not
+    # configurable here). i2pd must be installed and its SAM bridge enabled
+    # (see /etc/i2pd/i2pd.conf [sam] section); reticulum-mesh.service
+    # declares After=i2pd.service to ensure ordering at boot.
+    #
+    # connectable = True makes this node's I2P destination reachable by
+    # other I2P peers (server tunnel built via SAM). Drop to False to make
+    # this node only ever be a client/initiator over I2P.
+    type = I2PInterface
+    enabled = True
+    connectable = True

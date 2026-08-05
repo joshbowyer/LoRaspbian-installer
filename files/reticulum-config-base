@@ -29,16 +29,16 @@
 
   [[TCP Server on LAN]]
     type = TCPServerInterface
-    interface_enabled = True
+    enabled = True
     listen_ip = 0.0.0.0
     listen_port = 4242
 
   [[MeshAdv LoRa]]
     type = SX126xInterface
-    interface_enabled = True
+    enabled = True
     frequency = 915000000
     bandwidth = 125000
-    spreadingfactor = 8
+    spreadingfactor = 7
     codingrate = 5
     txpower = 22
     platform = luckfox-lyra-zero-w

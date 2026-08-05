@@ -1,0 +1,16 @@
+[Unit]
+Description=Reticulum mesh stack (rngit + nomadnet + rrcd + telemetry-collector, ordered bringup)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/reticulum-mesh-ctl start
+ExecStop=/usr/local/bin/reticulum-mesh-ctl stop
+ExecReload=/usr/local/bin/reticulum-mesh-ctl restart
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

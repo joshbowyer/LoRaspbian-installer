@@ -1,0 +1,15 @@
+[Unit]
+Description=RRC hub daemon (Reticulum IRC-style chat)
+After=network.target rngit.service
+Wants=rngit.service
+
+[Service]
+Type=simple
+User=lyra
+Group=lyra
+ExecStart=/usr/local/bin/rrcd --configdir /home/lyra/.reticulum --hub-name "The Spot" --greeting "Welcome to The Spot's chat lounge."
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

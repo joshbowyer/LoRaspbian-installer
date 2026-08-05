@@ -28,6 +28,7 @@ if [ "${1:-}" = "--noninteractive-only" ]; then
     rm -rf /home/lyra/.reticulum/storage/destination_table 2>/dev/null || true
     rm -f /home/lyra/.nomadnetwork/storage/identity 2>/dev/null || true
     rm -f /home/lyra/.rngit/client_identity /home/lyra/.rngit/repositories_identity 2>/dev/null || true
+    runuser -u lyra -- /usr/local/bin/rrcd --configdir /home/lyra/.reticulum --hub-name "The Spot" --greeting "Welcome to The Spot's chat lounge." >/dev/null 2>&1 || true
     date -Iseconds > "$MARKER_IDENTITY"
     exit 0
 fi
@@ -120,10 +121,12 @@ if [ "$MODE" = "reticulum" ]; then
     clear
     echo "board=$BOARD" > /etc/lyra-hardware.conf
     echo "hat=$HAT" >> /etc/lyra-hardware.conf
-    systemctl enable --now nomadnet.service rngit.service
+    systemctl enable --now reticulum-mesh.service
+    systemctl disable nomadnet.service rngit.service rrcd.service 2>/dev/null || true
     systemctl disable --now meshtasticd.service 2>/dev/null || true
 elif [ "$MODE" = "meshtastic" ]; then
-    systemctl disable --now nomadnet.service rngit.service
+    systemctl disable --now reticulum-mesh.service
+    systemctl disable nomadnet.service rngit.service rrcd.service 2>/dev/null || true
     systemctl enable --now meshtasticd.service
 fi
 

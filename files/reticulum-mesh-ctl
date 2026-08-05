@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+set -u
+
+LOGFILE=/home/lyra/.reticulum/logfile
+SERVICES=(rngit nomadnet rrcd telemetry-collector)
+
+log() {
+    printf '[reticulum-mesh] %s\n' "$*"
+}
+
+service_action() {
+    local action=$1
+    local service=$2
+    log "$action $service.service"
+    if ! systemctl "$action" "$service.service"; then
+        log "WARNING: systemctl $action $service.service failed; continuing"
+        return 1
+    fi
+    return 0
+}
+
+start_stack() {
+    local first_new_line=1
+    local ready=0
+    local attempt
+
+    log "Starting Reticulum mesh stack"
+    if [[ -f "$LOGFILE" ]]; then
+        first_new_line=$(( $(wc -l < "$LOGFILE") + 1 ))
+    fi
+
+    service_action start rngit || true
+
+    log "Waiting up to 15 seconds for fresh Reticulum interface readiness in $LOGFILE"
+    for attempt in $(seq 1 15); do
+        if [[ -f "$LOGFILE" ]] && tail -n "+$first_new_line" "$LOGFILE" 2>/dev/null | grep -Eq 'SX126xInterface\[MeshAdv LoRa\] is now online|System interfaces are ready'; then
+            ready=1
+            log "Reticulum interfaces reported ready after ${attempt}s"
+            break
+        fi
+        sleep 1
+    done
+
+    if (( ready == 0 )); then
+        log "WARNING: no expected fresh readiness line appeared within 15s; falling back to sleep 5"
+        sleep 5
+    fi
+
+    service_action start nomadnet || true
+    service_action start rrcd || true
+    service_action start telemetry-collector || true
+    log "Start sequence complete"
+}
+
+stop_stack() {
+    local remaining
+
+    log "Stopping Reticulum mesh stack in reverse order"
+    service_action stop telemetry-collector || true
+    service_action stop rrcd || true
+    service_action stop nomadnet || true
+    service_action stop rngit || true
+
+    remaining=$(ps aux | grep -E '[r]ngit|[n]omadnet|[r]rcd|[t]elemetry-collector' || true)
+    if [[ -n "$remaining" ]]; then
+        log "WARNING: matching processes remain after stop:"
+        printf '%s\n' "$remaining"
+    else
+        log "Verified no matching Reticulum mesh processes remain"
+    fi
+    log "Stop sequence complete"
+}
+
+case "${1:-}" in
+    start)
+        start_stack
+        ;;
+    stop)
+        stop_stack
+        ;;
+    restart)
+        stop_stack
+        start_stack
+        ;;
+    *)
+        printf 'Usage: %s {start|stop|restart}\n' "$0" >&2
+        exit 2
+        ;;
+esac

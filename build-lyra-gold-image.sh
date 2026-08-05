@@ -145,6 +145,7 @@ chroot_run "rm -rf /tmp/rngit-src && git clone -q https://github.com/kc1awv/rrcd
 # wheel from piwheels instead of compiling from source.
 chroot_run "pip3 install --break-system-packages --index-url https://www.piwheels.org/simple cbor2"
 chroot_run "cd /tmp/rrcd-src && pip3 install --break-system-packages . || echo 'rrcd install failed even with piwheels cbor2 - inspect manually, see docs/15-lyra-gold-image-build-handoff.md'"
+cp "$HERE/files/rrcd.service" "$MNT/etc/systemd/system/rrcd.service"
 chroot_run "git clone -q https://github.com/joshbowyer/reticulum-hat-mod.git /tmp/reticulum-hat-mod || true"
 mkdir -p "$MNT/home/lyra/.reticulum/interfaces"
 if [ -d "$MNT/tmp/reticulum-hat-mod" ]; then
@@ -178,18 +179,29 @@ cp "$HERE/files/10-lyra-setup-motd" "$MNT/etc/update-motd.d/10-lyra-setup-motd"
 chmod +x "$MNT/etc/update-motd.d/10-lyra-setup-motd"
 
 # MOTD branding + trimming: rebrand the existing Armbian figlet banner via its
-# own VENDOR/VENDORPRETTYNAME mechanism (no need to touch the "DO NOT EDIT"
-# scripts themselves), drop AP-mode/docker/generic-tips sections that don't
-# apply to this image, and add a services-status line for the mesh services
-# this image actually manages. armbian-config/armbian-upgrade stay - the
-# existing 41-commands script already lists them dynamically.
+# own VENDOR/VENDORPRETTYNAME mechanism (no need to replace the vendor header),
+# retain only its branded banner/version line, and use the richer profile.d
+# script for system and mesh status without duplicate update-motd output.
 sed -i 's/VENDOR="Armbian_community"/VENDOR="LoRaspbian"/' "$MNT/etc/armbian-release"
 sed -i "s/VENDORPRETTYNAME='Armbian community'/VENDORPRETTYNAME='LoRaspbian'/" "$MNT/etc/armbian-image-release"
-sed -i 's/MOTD_DISABLE="clear"/MOTD_DISABLE="clear ap-info containers-info tips"/' "$MNT/etc/default/armbian-motd"
+# This is the final argument line of the header's distinctive, multiline
+# version printf. Stop immediately afterward, before its package/support block.
+sed -i '/^[[:space:]]*"${VERSION}" "${BOARD_NAME}" "${KERNELID}"$/a exit 0' "$MNT/etc/update-motd.d/10-armbian-header"
+sed -i 's/MOTD_DISABLE="clear"/MOTD_DISABLE="clear ap-info containers-info tips ip-info sysinfo commands"/' "$MNT/etc/default/armbian-motd"
+cp "$HERE/files/motd-raspi.sh" "$MNT/etc/profile.d/motd-raspi.sh"
+chmod 755 "$MNT/etc/profile.d/motd-raspi.sh"
 cp "$HERE/files/22-lyra-services-motd" "$MNT/etc/update-motd.d/22-lyra-services-motd"
 chmod +x "$MNT/etc/update-motd.d/22-lyra-services-motd"
+# Old update-motd.d scripts are superseded by motd-raspi.sh above — keep the
+# files on disk (harmless) but disable execution so they can't duplicate or
+# conflict with the new banner.
+chmod -x "$MNT/etc/update-motd.d/10-lyra-setup-motd" 2>/dev/null || true
+chmod -x "$MNT/etc/update-motd.d/22-lyra-services-motd" 2>/dev/null || true
 
-chroot_run "systemctl enable nomadnet.service rngit.service first-boot.service"
+cp "$HERE/files/reticulum-mesh-ctl" "$MNT/usr/local/bin/reticulum-mesh-ctl"
+chmod +x "$MNT/usr/local/bin/reticulum-mesh-ctl"
+cp "$HERE/files/reticulum-mesh.service" "$MNT/etc/systemd/system/reticulum-mesh.service"
+chroot_run "systemctl enable reticulum-mesh.service first-boot.service"
 # Disable (don't uninstall) the graphical boot target - this is a headless node.
 chroot_run "systemctl set-default multi-user.target"
 

@@ -26,6 +26,23 @@
  *    3 I2C_SDA -> RM_IO0  -> GPIO0_A0 (chip 0)  -> <0x00 0x00 0x1f ...>
  *    5 I2C_SCL -> RM_IO1  -> GPIO0_A1 (chip 1)  -> <0x00 0x01 0x1e ...>
  *
+ * Added for the "station-g3" radio_board profile (BQ/Uniteng Station G3,
+ * RPi Zero 2W daughterboard path - see reticulum-hat-mod's SX126xInterface.py
+ * BOARD_PROFILES). Physical pins 11/15/16/18 come from the official Luckfox
+ * pinout diagram (wiki.luckfox.com/Luckfox-Lyra/Pinout) read via visual
+ * inspection, then bank/offset confirmed directly against the live
+ * devicetree dump (dtc -I fs -O dts /proc/device-tree) - each RM_IOn below
+ * was cross-checked against 2 different peripheral functions sharing that
+ * RM_IO and both agreed on the same bank/offset, e.g. rm-io3-spi0-clk and
+ * rm-io3-i2c0-sda both show rockchip,pins = <0x00 0x03 ...>. Unlike RM_IO29
+ * above (which maps to bank1, NOT bank0 offset 29), these 4 low-numbered
+ * RM_IOs do follow the simple "chip = RM_IO number" pattern - verified, not
+ * assumed.
+ *   11 TXEN/PA_EN  -> RM_IO3  -> GPIO0_A3 (chip 3)  -> plain GPIO output (mux 0)
+ *   15 IRQ/DIO1    -> RM_IO5  -> GPIO0_A5 (chip 5)  -> plain GPIO input (mux 0)
+ *   16 RXEN/LNA_EN -> RM_IO13 -> GPIO0_B5 (chip 13) -> plain GPIO output (mux 0)
+ *   18 BUSY        -> RM_IO12 -> GPIO0_B4 (chip 12) -> plain GPIO input (mux 0)
+ *
  * Physical pins 3/5 match the Raspberry Pi's user-facing "I2C1" bus position
  * (used by nearly every off-the-shelf RTC/power-monitor HAT, e.g. DS3231,
  * PCF8563, INA3221 breakouts). Routed here to this board's i2c0 controller
@@ -89,6 +106,37 @@
 				lora_pi_i2c0_scl: lora-pi-i2c0-scl {
 					/* pin5 I2C_SCL, GPIO0_A1 (RM_IO1) */
 					rockchip,pins = <0x00 0x01 0x1e &pcfg_pull_none>;
+				};
+
+				lora_pi_txen: lora-pi-txen {
+					/* pin11 (Station G3 TXEN/PA_EN, active-high), GPIO0_A3
+					 * (chip 3 = bank0 offset 3 / RM_IO3), plain GPIO output,
+					 * default LOW so the PA is disabled at boot until
+					 * software takes control. */
+					rockchip,pins = <0x00 0x03 0x00 &pcfg_output_low>;
+				};
+
+				lora_pi_irq2: lora-pi-irq2 {
+					/* pin15 (Station G3 IRQ/DIO1), GPIO0_A5 (chip 5 = bank0
+					 * offset 5 / RM_IO5), plain GPIO input. pcfg_pull_none,
+					 * not pull_down - matches the fix already applied to
+					 * pin36's IRQ line above (SX126x DIO1 is a standard
+					 * push-pull CMOS output, no pull needed). */
+					rockchip,pins = <0x00 0x05 0x00 &pcfg_pull_none>;
+				};
+
+				lora_pi_rxen: lora-pi-rxen {
+					/* pin16 (Station G3 RXEN/LNA_EN, active-LOW), GPIO0_B5
+					 * (chip 13 = bank0 offset 13 / RM_IO13), plain GPIO
+					 * output, default HIGH so the LNA is disabled at boot
+					 * (active-low: asserted/enabled = LOW). */
+					rockchip,pins = <0x00 0x0d 0x00 &pcfg_output_high>;
+				};
+
+				lora_pi_busy2: lora-pi-busy2 {
+					/* pin18 (Station G3 BUSY), GPIO0_B4 (chip 12 = bank0
+					 * offset 12 / RM_IO12), plain GPIO input. */
+					rockchip,pins = <0x00 0x0c 0x00 &pcfg_pull_none>;
 				};
 			};
 		};

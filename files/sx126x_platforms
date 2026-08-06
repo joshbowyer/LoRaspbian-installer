@@ -12,7 +12,11 @@
 # the official Luckfox pinout diagram - see
 # lyra-gold-image/dts-overlay/README.md for the full derivation. Physical pin
 # -> (gpiochip, line) mapping:
-#   12 (RESET) -> gpiochip0 line 14  (GPIO0_B6 / RM_IO14)
+#   11 (Station G3 TXEN/PA_EN) -> gpiochip0 line 3   (GPIO0_A3 / RM_IO3)
+#   12 (RESET)                 -> gpiochip0 line 14  (GPIO0_B6 / RM_IO14)
+#   15 (Station G3 IRQ/DIO1)   -> gpiochip0 line 5   (GPIO0_A5 / RM_IO5)
+#   16 (Station G3 RXEN/LNA_EN)-> gpiochip0 line 13  (GPIO0_B5 / RM_IO13)
+#   18 (Station G3 BUSY)       -> gpiochip0 line 12  (GPIO0_B4 / RM_IO12)
 #   32 (RXEN)  -> gpiochip1 line 26  (GPIO1_D2 / RM_IO30, chip pin 58, bank1 offset 58-32=26)
 #   33 (TXEN)  -> gpiochip1 line 18  (GPIO1_C2 / RM_IO27, chip pin 50, bank1 offset 50-32=18)
 #   36 (IRQ)   -> gpiochip1 line 25  (GPIO1_D1 / RM_IO29, chip pin 57, bank1 offset 57-32=25)
@@ -21,10 +25,22 @@
 #                 cs-gpios in the devicetree overlay, same approach the
 #                 bundled raspberry-pi profile uses for the MeshAdv HAT)
 #
+# Pins 11/15/16/18 added for the "station-g3" radio_board profile
+# (reticulum-hat-mod, BQ/Uniteng Station G3 RPi-Zero-2W-daughterboard path).
+# RM_IO3/5/12/13 confirmed via live devicetree: each RM_IO's bank/offset is
+# fixed regardless of which peripheral function it's routed to (cross-checked
+# across 2 different function nodes per RM_IO, e.g. rm-io3-spi0-clk and
+# rm-io3-i2c0-sda both show bank=0x00 offset=0x03) - so RM_IOn = gpiochip0
+# line n for all four of these low-numbered RM_IOs. NOTE this pattern does
+# NOT hold universally (RM_IO29 above maps to gpiochip1 line 25, not
+# gpiochip0 line 29) - it happened to hold for these 4 specific indices,
+# verified directly rather than assumed.
+#
 # NOT yet physically verified with a HAT attached (no LoRa HAT for this board
 # existed at time of writing) - the pin/GPIO mapping IS hardware-verified
 # (SPI0 + GPIO lines confirmed live via dtoverlay testing), but end-to-end
-# radio behavior through this profile has not been tested yet.
+# radio behavior through either the meshadv-pi-hat-v1.1 or station-g3
+# profile has not been tested yet.
 
 [platforms]
   [[luckfox-lyra-zero-w]]
@@ -32,4 +48,4 @@
     platform_version = 1
     gpiochip = gpiochip0
     spi_bus_default = 0
-    header_pin_to_line = {"12": ["gpiochip0", 14], "32": ["gpiochip1", 26], "33": ["gpiochip1", 18], "36": ["gpiochip1", 25], "38": ["gpiochip0", 17], "40": ["gpiochip0", 18]}
+    header_pin_to_line = {"11": ["gpiochip0", 3], "12": ["gpiochip0", 14], "15": ["gpiochip0", 5], "16": ["gpiochip0", 13], "18": ["gpiochip0", 12], "32": ["gpiochip1", 26], "33": ["gpiochip1", 18], "36": ["gpiochip1", 25], "38": ["gpiochip0", 17], "40": ["gpiochip0", 18]}

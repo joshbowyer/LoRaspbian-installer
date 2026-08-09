@@ -1,0 +1,26 @@
+[Unit]
+Description=rnsh remote shell daemon (SSH-like access over Reticulum)
+After=network-online.target rngit.service
+Wants=network-online.target rngit.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=lyra
+Group=lyra
+SupplementaryGroups=spi gpio dialout
+# -l          : listen (server) mode
+# -b 1800     : announce on startup, then every 30 min (so clients without
+#               a cached path can still discover this destination)
+# Allowed identities are read from ~/.rnsh/allowed_identities (one hex
+# hash per line, reloaded on every connection attempt -- no restart
+# needed to add/remove access). Empty by default; the first-boot wizard
+# seeds it if you provide a hash, otherwise add one later:
+#   echo <client_identity_hash> >> /home/lyra/.rnsh/allowed_identities
+ExecStart=/usr/local/bin/rnsh --config /home/lyra/.rnsh --rnsconfig /home/lyra/.reticulum -l -b 1800
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

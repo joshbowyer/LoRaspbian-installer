@@ -121,12 +121,60 @@ if [ "$MODE" = "reticulum" ]; then
     clear
     echo "board=$BOARD" > /etc/lyra-hardware.conf
     echo "hat=$HAT" >> /etc/lyra-hardware.conf
+
+    # --- rnsh remote-shell access -------------------------------------
+    # rnsh's allowlist is empty by default (accepts no connections at
+    # all until a hash is added), so ask now if the operator wants to
+    # seed it - this is the only point in setup where an interactive
+    # human is guaranteed to be present to type a hash in. Skippable;
+    # a hash can always be added later with:
+    #   echo <hash> >> /home/lyra/.rnsh/allowed_identities
+    if dialog --yesno "Enable remote shell access (rnsh) now? This lets you SSH-like into this node over Reticulum from a specific client identity - useful for nodes with no other network access (e.g. LoRa-only field deployments). You'll need your client's rnsh identity hash (run 'rnsh -p' on your own machine to get it)." 12 74 2>&1 >/dev/tty; then
+        clear
+        CLIENT_HASH=$(dialog --inputbox "Client identity hash to allow (32 hex chars, from 'rnsh -p' on your machine). Leave blank to skip and add one later." 10 70 3>&1 1>&2 2>&3) || CLIENT_HASH=""
+        clear
+        if [ -n "$CLIENT_HASH" ]; then
+            if [[ "$CLIENT_HASH" =~ ^[0-9a-fA-F]{32}$ ]]; then
+                echo "$CLIENT_HASH" >> /home/lyra/.rnsh/allowed_identities
+                chown lyra:lyra /home/lyra/.rnsh/allowed_identities
+                echo "Added $CLIENT_HASH to /home/lyra/.rnsh/allowed_identities"
+            else
+                echo "WARNING: '$CLIENT_HASH' doesn't look like a valid 32-hex-char identity hash - not added. Add it manually later if needed."
+            fi
+        else
+            echo "No client hash provided - rnsh will refuse all connections until you add one:"
+            echo "  echo <hash> >> /home/lyra/.rnsh/allowed_identities"
+        fi
+    fi
+
     systemctl enable --now reticulum-mesh.service
-    systemctl disable nomadnet.service rngit.service rrcd.service 2>/dev/null || true
+    systemctl disable nomadnet.service rngit.service rrcd.service rnsh.service 2>/dev/null || true
     systemctl disable --now meshtasticd.service 2>/dev/null || true
+
+    # rnsh only generates its listener identity (and therefore its
+    # destination hash) on first run - wait briefly for
+    # reticulum-mesh.service's oneshot startup to reach it, then show
+    # the hash so the operator can record it / hand it out.
+    echo "Waiting for rnsh to generate its identity..."
+    RNSH_HASH=""
+    for _attempt in $(seq 1 15); do
+        if [ -f /home/lyra/.rnsh/identity.default ]; then
+            RNSH_HASH=$(runuser -u lyra -- /usr/local/bin/rnsh --config /home/lyra/.rnsh --rnsconfig /home/lyra/.reticulum -p -l 2>/dev/null | awk -F'[<>]' '/Listening on/{print $2}')
+            [ -n "$RNSH_HASH" ] && break
+        fi
+        sleep 1
+    done
+    if [ -n "$RNSH_HASH" ]; then
+        dialog --clear --backtitle "Lyra first-boot setup" --title "rnsh remote shell address" \
+            --msgbox "This node's rnsh destination hash is:\n\n  $RNSH_HASH\n\nUse this to connect from an allowed client:\n  rnsh $RNSH_HASH\n\nManage who can connect by editing:\n  /home/lyra/.rnsh/allowed_identities" 14 70
+        clear
+    else
+        echo "NOTE: could not read the rnsh destination hash yet - check later with:"
+        echo "  rnsh --config /home/lyra/.rnsh --rnsconfig /home/lyra/.reticulum -p -l"
+    fi
 elif [ "$MODE" = "meshtastic" ]; then
     systemctl disable --now reticulum-mesh.service
-    systemctl disable nomadnet.service rngit.service rrcd.service 2>/dev/null || true
+    systemctl disable nomadnet.service rngit.service rrcd.service rnsh.service 2>/dev/null || true
     systemctl enable --now meshtasticd.service
 fi
 

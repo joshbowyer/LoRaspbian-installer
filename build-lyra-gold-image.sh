@@ -174,6 +174,16 @@ chroot_run "sed -i '/^\[sam\]/,/^\[/ { s/^[[:space:]]*#[[:space:]]*enabled[[:spa
 echo "Deploying systemd services..."
 cp "$HERE/files/nomadnet.service" "$MNT/etc/systemd/system/nomadnet.service"
 cp "$HERE/files/rngit.service" "$MNT/etc/systemd/system/rngit.service"
+cp "$HERE/files/rnsh.service" "$MNT/etc/systemd/system/rnsh.service"
+# rnsh's allowlist directory - empty by default (accepts no connections
+# until a hash is added), created here so ownership/perms are correct
+# before rnsh's first run generates its listener identity into it. The
+# first-boot wizard offers to seed allowed_identities with a hash you
+# provide; otherwise add one later:
+#   echo <client_identity_hash> >> /home/lyra/.rnsh/allowed_identities
+mkdir -p "$MNT/home/lyra/.rnsh"
+touch "$MNT/home/lyra/.rnsh/allowed_identities"
+chroot_run "chown -R lyra:lyra /home/lyra/.rnsh && chmod 600 /home/lyra/.rnsh/allowed_identities"
 cp "$HERE/files/first-boot.service" "$MNT/etc/systemd/system/first-boot.service"
 cp "$HERE/files/first-boot-wizard.sh" "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
 chmod +x "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"

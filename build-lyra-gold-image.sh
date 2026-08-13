@@ -169,6 +169,18 @@ chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq i2pd"
 # The packaged setting is commented as '# enabled = true'. Restrict both
 # normalization substitutions to [sam] so no other i2pd service is changed.
 chroot_run "sed -i '/^\[sam\]/,/^\[/ { s/^[[:space:]]*#[[:space:]]*enabled[[:space:]]*=.*/enabled = true/; s/^[[:space:]]*enabled[[:space:]]*=.*/enabled = true/; }' /etc/i2pd/i2pd.conf"
+# Logging: systemd unit always passes --logfile=/var/log/i2pd/i2pd.log and
+# default level is info (very chatty). Cap volume on small SD rootfs.
+chroot_run "sed -i -e 's/^#*[[:space:]]*loglevel[[:space:]]*=.*/loglevel = warn/' /etc/i2pd/i2pd.conf"
+# If the key was fully absent, append it (idempotent enough for gold builds).
+if ! grep -qE '^[[:space:]]*loglevel[[:space:]]*=' "$MNT/etc/i2pd/i2pd.conf"; then
+  printf '\n## LoRaspbian: keep i2pd logs small on SD cards\nloglevel = warn\n' \
+    >> "$MNT/etc/i2pd/i2pd.conf"
+fi
+# Package logrotate targets /var/log.hdd/i2pd (Armbian log2ram) which is not
+# present here — replace with size-capped rotation on the real path.
+cp "$HERE/files/logrotate-i2pd" "$MNT/etc/logrotate.d/i2pd"
+chmod 644 "$MNT/etc/logrotate.d/i2pd"
 
 # --- 7c. telemetry-collector + RetiBBS (mesh children, started via mesh-ctl) --
 echo "Installing nomadnet-telemetry-collector and RetiBBS..."

@@ -1,0 +1,13 @@
+# LoRaspbian: i2pd unit writes --logfile=/var/log/i2pd/i2pd.log
+# Debian/Armbian package ships /var/log.hdd/i2pd/*.log (log2ram path) which
+# does not exist on plain SD rootfs, so logs never rotated and filled the card.
+/var/log/i2pd/*.log {
+	size 20M
+	rotate 3
+	copytruncate
+	compress
+	delaycompress
+	missingok
+	notifempty
+	su i2pd i2pd
+}

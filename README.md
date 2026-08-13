@@ -26,6 +26,39 @@ A single `lyra-gold.img` you `dd` to an SD card. On first boot the board:
 
 ## Quick start
 
+### 0. First-time board: erase SPI NAND (required on new Lyra Zero W)
+
+New Luckfox Lyra Zero W boards ship with firmware on the onboard **SPI NAND**.
+That flash wins the boot order over the TF/SD card, so a freshly written
+LoRaspbian image can hang after OP-TEE with no U-Boot/Linux on serial until
+the SPI NAND is wiped empty. (A board that already boots SD-only — SPI NAND
+all `0xFF` — can skip this.)
+
+**Easiest path (Chrome + WebUSB, no SDK):**
+
+1. **Remove the SD/TF card** before erasing. If a card is inserted, the
+   flasher may erase the card instead of the onboard SPI NAND.
+2. Hold **BOOT** for ~5 seconds while plugging USB-C into the computer
+   (Loader / Maskrom mode).
+3. Open in **Chrome**:
+   [Rockchip WebUSB eraser](https://web-flasher-git-rockchip-webusb-erase-meshtastic.vercel.app)
+4. Connect the device in the page, then use the **erase NAND flash** option
+   at the bottom of the page.
+5. Unplug, insert the flashed SD card, power up.
+
+Credit: Meshtastic WebUSB Rockchip erase flasher (VID).
+
+**Serial baud when debugging boot:** U-Boot/SPL often uses **1500000**; once
+Linux/Armbian is up, console is **`ttyS2,115200n8`**.
+
+**CLI fallback** (if you prefer not to use the browser tool): install
+`rkdeveloptool` or Luckfox `upgrade_tool`, put the board in Loader mode the
+same way, download an RK3506 `MiniLoaderAll.bin` from the Luckfox SDK, then
+`ef` (erase flash) + `rd` (reset). See
+[Luckfox Lyra image flashing](https://wiki.luckfox.com/Luckfox-Lyra/Getting-Started/Image-flashing).
+
+### 1. Build the image
+
 ```bash
 sudo apt-get install -y wget xz-utils util-linux qemu-user-static e2fsprogs device-tree-compiler
 sudo ./build-lyra-gold-image.sh
@@ -37,6 +70,8 @@ Output: `out/lyra-gold.img`. Flash with:
 ```bash
 sudo dd if=out/lyra-gold.img of=/dev/sdX bs=4M status=progress conv=fsync
 ```
+
+Then erase SPI NAND if needed (step 0), insert the card, and boot.
 
 ### Running the build under WSL
 

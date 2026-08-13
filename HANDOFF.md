@@ -15,6 +15,20 @@ Pi-designed LoRa HAT — and the RTC/power-monitor HATs commonly paired with
 it — plugs in and works unmodified. The project name is a nod to Raspbian:
 same "flash it, boot it, it just works" goal.
 
+### First-time hardware: SPI NAND must be empty for SD boot
+
+New Lyra Zero W units often have factory (or prior) firmware on **SPI NAND**,
+which takes boot priority over TF/SD. Symptom: serial stops after OP-TEE
+"switching to normal world boot" with no U-Boot banner. Working SD-only
+boards have SPI NAND wiped to `0xFF`.
+
+**Documented easy path (see README Quick start §0):** remove SD card, hold
+BOOT ~5s while plugging USB-C, open Chrome WebUSB eraser
+https://web-flasher-git-rockchip-webusb-erase-meshtastic.vercel.app ,
+connect device, erase NAND flash at bottom of page. (If SD is inserted it
+may erase the card instead.) Serial: U-Boot often 1500000; Linux
+`ttyS2,115200n8`.
+
 **Origin story**: this grew out of an earlier, much longer Reticulum
 off-grid networking project (in a separate repo, `/home/josh/Reticulum`,
 with internal docs at `docs/00` through `docs/15`). The Lyra gold-image work

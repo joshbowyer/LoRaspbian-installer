@@ -3,7 +3,7 @@
 set -u
 
 LOGFILE=/home/lyra/.reticulum/logfile
-SERVICES=(rngit nomadnet rrcd telemetry-collector rnsh)
+SERVICES=(rngit nomadnet rrcd telemetry-collector retibbs rnsh)
 
 log() {
     printf '[reticulum-mesh] %s\n' "$*"
@@ -50,6 +50,7 @@ start_stack() {
     service_action start nomadnet || true
     service_action start rrcd || true
     service_action start telemetry-collector || true
+    service_action start retibbs || true
     service_action start rnsh || true
     log "Start sequence complete"
 }
@@ -59,12 +60,13 @@ stop_stack() {
 
     log "Stopping Reticulum mesh stack in reverse order"
     service_action stop rnsh || true
+    service_action stop retibbs || true
     service_action stop telemetry-collector || true
     service_action stop rrcd || true
     service_action stop nomadnet || true
     service_action stop rngit || true
 
-    remaining=$(ps aux | grep -E '[r]ngit|[n]omadnet|[r]rcd|[t]elemetry-collector|[r]nsh' || true)
+    remaining=$(ps aux | grep -E '[r]ngit|[n]omadnet|[r]rcd|[t]elemetry-collector|[r]etibbs|[r]nsh' || true)
     if [[ -n "$remaining" ]]; then
         log "WARNING: matching processes remain after stop:"
         printf '%s\n' "$remaining"

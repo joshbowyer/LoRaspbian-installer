@@ -1,0 +1,18 @@
+[Unit]
+Description=LXMF Telemetry Collector (NomadNet Micron grid status page)
+After=network-online.target nomadnet.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=lyra
+Group=lyra
+WorkingDirectory=/home/lyra/telemetry-collector
+ExecStart=/usr/bin/python3 /home/lyra/telemetry-collector/collector.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -170,11 +170,55 @@ chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq i2pd"
 # normalization substitutions to [sam] so no other i2pd service is changed.
 chroot_run "sed -i '/^\[sam\]/,/^\[/ { s/^[[:space:]]*#[[:space:]]*enabled[[:space:]]*=.*/enabled = true/; s/^[[:space:]]*enabled[[:space:]]*=.*/enabled = true/; }' /etc/i2pd/i2pd.conf"
 
+# --- 7c. telemetry-collector + RetiBBS (mesh children, started via mesh-ctl) --
+echo "Installing nomadnet-telemetry-collector and RetiBBS..."
+# collector.py needs umsgpack (falls back to msgpack). RetiBBS needs textual +
+# flask for its TUI/optional web bits. Do NOT pip install RetiBBS req.txt:
+# upstream ships UTF-16 and pins ancient rns versions that conflict with the
+# stack we already installed above.
+chroot_run "pip3 install --break-system-packages umsgpack textual flask"
+chroot_run "rm -rf /home/lyra/telemetry-collector && git clone -q https://github.com/joshbowyer/nomadnet-telemetry-collector.git /home/lyra/telemetry-collector"
+chroot_run "rm -rf /home/lyra/retibbs && git clone -q https://github.com/kc1awv/RetiBBS.git /home/lyra/retibbs"
+# State dirs: identities are wiped on first boot so every card gets unique hashes.
+mkdir -p "$MNT/home/lyra/.telemetry-collector"
+mkdir -p "$MNT/home/lyra/.retibbs"
+# Seed RetiBBS config (server_name is operator-facing; identity.pem is created
+# on first run and wiped by first-boot so it is not baked into the image).
+cat > "$MNT/home/lyra/.retibbs/config.json" << 'EOF'
+{
+    "server_name": "Lyra BBS",
+    "announce_interval": 1800,
+    "theme": "default",
+    "enable_web_server": false,
+    "use_wsgi": false
+}
+EOF
+# NomadNet pages dir the collector writes into (telemetry/index.mu).
+mkdir -p "$MNT/home/lyra/.nomadnetwork/storage/pages/telemetry"
+# Empty rngit public repo root (content is NOT baked - seed via rsync/mirror
+# after first boot; see README / operator notes).
+mkdir -p "$MNT/home/lyra/rngit-repos/public"
+mkdir -p "$MNT/home/lyra/.rngit"
+cat > "$MNT/home/lyra/.rngit/config" << 'EOF'
+[repositories]
+public = /home/lyra/rngit-repos/public
+
+[server]
+announce_interval = 360
+
+# Grant write to your operator identity after first boot, e.g.:
+#   public = rw:<your_32_hex_identity_hash>
+[access]
+public = r:all
+EOF
+
 # --- 8. systemd services ------------------------------------------------------
 echo "Deploying systemd services..."
 cp "$HERE/files/nomadnet.service" "$MNT/etc/systemd/system/nomadnet.service"
 cp "$HERE/files/rngit.service" "$MNT/etc/systemd/system/rngit.service"
 cp "$HERE/files/rnsh.service" "$MNT/etc/systemd/system/rnsh.service"
+cp "$HERE/files/telemetry-collector.service" "$MNT/etc/systemd/system/telemetry-collector.service"
+cp "$HERE/files/retibbs.service" "$MNT/etc/systemd/system/retibbs.service"
 # rnsh's allowlist directory - empty by default (accepts no connections
 # until a hash is added), created here so ownership/perms are correct
 # before rnsh's first run generates its listener identity into it. The

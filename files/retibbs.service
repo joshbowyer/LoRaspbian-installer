@@ -1,0 +1,23 @@
+[Unit]
+Description=RetiBBS bulletin board server (alpha)
+After=network-online.target rngit.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=lyra
+Group=lyra
+WorkingDirectory=/home/lyra/retibbs/server
+# retibbs_server.py calls input() in a loop to catch manual announce
+# triggers. Under systemd, stdin is /dev/null by default, so input()
+# raises EOFError and crash-loops. Feeding it a permanently-open stdin
+# via process substitution fixes this without patching upstream alpha
+# code. Must use /bin/bash, not /bin/sh (dash lacks process substitution).
+ExecStart=/bin/bash -c '/usr/bin/python3 /home/lyra/retibbs/server/retibbs_server.py --reticulum-config /home/lyra/.reticulum --identity-file /home/lyra/.retibbs/identity.pem --config-file /home/lyra/.retibbs/config.json < <(sleep infinity)'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

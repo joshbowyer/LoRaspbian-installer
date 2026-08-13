@@ -1,5 +1,5 @@
 [Unit]
-Description=Reticulum mesh stack (rngit + nomadnet + rrcd + telemetry-collector, ordered bringup)
+Description=Reticulum mesh stack (rngit + nomadnet + rrcd + telemetry-collector + retibbs + rnsh, ordered bringup)
 After=network-online.target i2pd.service
 Wants=network-online.target i2pd.service
 

@@ -23,11 +23,16 @@ if [ "${1:-}" = "--noninteractive-only" ]; then
     if [ -f "$MARKER_IDENTITY" ]; then
         exit 0
     fi
-    echo "Wiping any pre-existing Reticulum/NomadNet/rngit identities..."
+    echo "Wiping any pre-existing Reticulum/NomadNet/rngit/telemetry/retibbs identities..."
     rm -f /home/lyra/.reticulum/storage/identity 2>/dev/null || true
     rm -rf /home/lyra/.reticulum/storage/destination_table 2>/dev/null || true
     rm -f /home/lyra/.nomadnetwork/storage/identity 2>/dev/null || true
     rm -f /home/lyra/.rngit/client_identity /home/lyra/.rngit/repositories_identity 2>/dev/null || true
+    # telemetry-collector + RetiBBS identities (baked apps; must not share hashes across cards)
+    rm -f /home/lyra/.telemetry-collector/identity 2>/dev/null || true
+    rm -f /home/lyra/.telemetry-collector/state.json 2>/dev/null || true
+    rm -rf /home/lyra/.telemetry-collector/lxmf_storage 2>/dev/null || true
+    rm -f /home/lyra/.retibbs/identity.pem 2>/dev/null || true
     runuser -u lyra -- /usr/local/bin/rrcd --configdir /home/lyra/.reticulum --hub-name "The Spot" --greeting "Welcome to The Spot's chat lounge." >/dev/null 2>&1 || true
     date -Iseconds > "$MARKER_IDENTITY"
     exit 0
@@ -148,7 +153,8 @@ if [ "$MODE" = "reticulum" ]; then
     fi
 
     systemctl enable --now reticulum-mesh.service
-    systemctl disable nomadnet.service rngit.service rrcd.service rnsh.service 2>/dev/null || true
+    # Children are started only via reticulum-mesh-ctl (ordered bringup).
+    systemctl disable nomadnet.service rngit.service rrcd.service telemetry-collector.service retibbs.service rnsh.service 2>/dev/null || true
     systemctl disable --now meshtasticd.service 2>/dev/null || true
 
     # rnsh only generates its listener identity (and therefore its
@@ -174,7 +180,7 @@ if [ "$MODE" = "reticulum" ]; then
     fi
 elif [ "$MODE" = "meshtastic" ]; then
     systemctl disable --now reticulum-mesh.service
-    systemctl disable nomadnet.service rngit.service rrcd.service rnsh.service 2>/dev/null || true
+    systemctl disable nomadnet.service rngit.service rrcd.service telemetry-collector.service retibbs.service rnsh.service 2>/dev/null || true
     systemctl enable --now meshtasticd.service
 fi
 

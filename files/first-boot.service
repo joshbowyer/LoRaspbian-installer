@@ -1,7 +1,7 @@
 [Unit]
 Description=Lyra gold-image first-boot setup (identity wipe only - interactive wizard runs on first SSH/console login instead, see /etc/profile.d/00-lyra-first-boot.sh)
 After=network-online.target
-Before=reticulum-mesh.service nomadnet.service rngit.service rrcd.service meshtasticd.service
+Before=reticulum-mesh.service nomadnet.service rngit.service rrcd.service telemetry-collector.service retibbs.service rnsh.service meshtasticd.service
 ConditionPathExists=!/etc/lyra-first-boot-done
 
 [Service]

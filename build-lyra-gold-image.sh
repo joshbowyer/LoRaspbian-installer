@@ -236,28 +236,31 @@ chmod +x "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
 # `sudo lyra-setup`. Only the noninteractive identity-wipe phase (invoked by
 # first-boot.service below) still runs automatically at every first boot.
 ln -sf /usr/local/sbin/lyra-first-boot-wizard.sh "$MNT/usr/local/bin/lyra-setup"
-cp "$HERE/files/10-lyra-setup-motd" "$MNT/etc/update-motd.d/10-lyra-setup-motd"
-chmod +x "$MNT/etc/update-motd.d/10-lyra-setup-motd"
+  # Kept on disk for reference / manual re-enable, but never executable:
+  # motd-raspi.sh (profile.d) owns the login banner. update-motd.d only runs
+  # scripts with +x, so 644 is the hard disable (chmod -x alone has been
+  # observed to leave 755 on some flashes).
+  cp "$HERE/files/10-lyra-setup-motd" "$MNT/etc/update-motd.d/10-lyra-setup-motd"
+  chmod 644 "$MNT/etc/update-motd.d/10-lyra-setup-motd"
+  cp "$HERE/files/22-lyra-services-motd" "$MNT/etc/update-motd.d/22-lyra-services-motd"
+  chmod 644 "$MNT/etc/update-motd.d/22-lyra-services-motd"
 
-# MOTD branding + trimming: rebrand the existing Armbian figlet banner via its
-# own VENDOR/VENDORPRETTYNAME mechanism (no need to replace the vendor header),
-# retain only its branded banner/version line, and use the richer profile.d
-# script for system and mesh status without duplicate update-motd output.
-sed -i 's/VENDOR="Armbian_community"/VENDOR="LoRaspbian"/' "$MNT/etc/armbian-release"
-sed -i "s/VENDORPRETTYNAME='Armbian community'/VENDORPRETTYNAME='LoRaspbian'/" "$MNT/etc/armbian-image-release"
-# This is the final argument line of the header's distinctive, multiline
-# version printf. Stop immediately afterward, before its package/support block.
-sed -i '/^[[:space:]]*"${VERSION}" "${BOARD_NAME}" "${KERNELID}"$/a exit 0' "$MNT/etc/update-motd.d/10-armbian-header"
-sed -i 's/MOTD_DISABLE="clear"/MOTD_DISABLE="clear ap-info containers-info tips ip-info sysinfo commands"/' "$MNT/etc/default/armbian-motd"
-cp "$HERE/files/motd-raspi.sh" "$MNT/etc/profile.d/motd-raspi.sh"
-chmod 755 "$MNT/etc/profile.d/motd-raspi.sh"
-cp "$HERE/files/22-lyra-services-motd" "$MNT/etc/update-motd.d/22-lyra-services-motd"
-chmod +x "$MNT/etc/update-motd.d/22-lyra-services-motd"
-# Old update-motd.d scripts are superseded by motd-raspi.sh above — keep the
-# files on disk (harmless) but disable execution so they can't duplicate or
-# conflict with the new banner.
-chmod -x "$MNT/etc/update-motd.d/10-lyra-setup-motd" 2>/dev/null || true
-chmod -x "$MNT/etc/update-motd.d/22-lyra-services-motd" 2>/dev/null || true
+  # MOTD branding + trimming: rebrand VENDOR strings for anything that still
+  # reads them, hide Armbian figlet header + noisy modules, and use the richer
+  # profile.d script for system and mesh status.
+  sed -i 's/VENDOR="Armbian_community"/VENDOR="LoRaspbian"/' "$MNT/etc/armbian-release"
+  sed -i "s/VENDORPRETTYNAME='Armbian community'/VENDORPRETTYNAME='LoRaspbian'/" "$MNT/etc/armbian-image-release"
+  # Belt-and-suspenders if header is ever re-enabled: stop after version line,
+  # before the packages/updates/support block.
+  sed -i '/^[[:space:]]*"${VERSION}" "${BOARD_NAME}" "${KERNELID}"$/a exit 0' "$MNT/etc/update-motd.d/10-armbian-header"
+  # header = LoRaspbian/Armbian figlet; clear/ap-info/... = other Armbian noise.
+  # motd-raspi.sh replaces all of this for interactive logins.
+  sed -i 's/MOTD_DISABLE="clear"/MOTD_DISABLE="header clear ap-info containers-info tips ip-info sysinfo commands"/' "$MNT/etc/default/armbian-motd"
+  cp "$HERE/files/motd-raspi.sh" "$MNT/etc/profile.d/motd-raspi.sh"
+  chmod 755 "$MNT/etc/profile.d/motd-raspi.sh"
+  # Re-assert non-executable in case a later step or umask touched them.
+  chmod 644 "$MNT/etc/update-motd.d/10-lyra-setup-motd" \
+            "$MNT/etc/update-motd.d/22-lyra-services-motd"
 
 cp "$HERE/files/reticulum-mesh-ctl" "$MNT/usr/local/bin/reticulum-mesh-ctl"
 chmod +x "$MNT/usr/local/bin/reticulum-mesh-ctl"

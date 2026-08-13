@@ -308,6 +308,10 @@ chroot_run "systemctl enable lyra-networkd-wifi-race-workaround.service"
 mkdir -p "$MNT/home/lyra/.reticulum"
 cp "$HERE/files/reticulum-config-base" "$MNT/home/lyra/.reticulum/config"
 
+# Sensible vim defaults for serial/SSH (mouse off so selection works; syntax on).
+# Owned by lyra via the final chown -R home/lyra below.
+cp "$HERE/files/vimrc" "$MNT/home/lyra/.vimrc"
+
 # --- 9b. WiFi (baked in at build time, if provided above) -------------------
 if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
     echo "Security hardening enabled - skipping WiFi bake-in even if credentials were provided."

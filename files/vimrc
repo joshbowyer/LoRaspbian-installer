@@ -1,0 +1,4 @@
+" LoRaspbian default vimrc for user lyra
+" Disable mouse so terminal selection/clipboard works over serial/SSH.
+set mouse-=a
+syntax on

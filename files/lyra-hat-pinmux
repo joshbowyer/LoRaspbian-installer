@@ -1,0 +1,314 @@
+#!/bin/bash
+# lyra-hat-pinmux - reconcile LoRa HAT pinmux overlay with selected HAT profile.
+#
+# The Lyra gold image supports two mutually exclusive .dtbo overlays for the
+# 40-pin header because physical pin 16 (RM_IO13 / GPIO0_B5) serves
+# opposite roles on the two supported HATs:
+#
+#   lyra-zero-w-pi-header        MeshAdv + GPS PPS (pin16 = INPUT)
+#   lyra-zero-w-station-g3       BQ / Uniteng Station G3 (pin16 = RXEN OUT)
+#
+# Loading both .dtbo at once is undefined behaviour (same pin, two configs,
+# different directions). This script detects which HAT the user has selected
+# (from /etc/lyra-hardware.conf, the Reticulum config's [[SX126xInterface]]
+# radio_board= line, and/or the Meshtastic config if present) and writes the
+# correct name into armbianEnv.txt's user_overlays= line. The actual pinmux
+# change only takes effect at the next boot.
+#
+# Subcommands:
+#   status                    print desired, active, match/mismatch, reboot flag
+#   check                     exit 0 if match, exit 1 if mismatch (warns)
+#   apply [meshadv|station-g3]   write the chosen overlay name into armbianEnv.txt;
+#                                preserves any other unrelated overlays; sets a
+#                                reboot-required flag. Does NOT reboot.
+#   ensure                    if mismatch, apply correct overlay for the detected
+#                                desired profile (no-arg `apply`); no-op if match.
+#                                Safe to call from reticulum-mesh.service start.
+#
+# Requires root for apply / ensure (writes to /boot/armbianEnv.txt + flag file).
+
+set -euo pipefail
+
+ARMBIAN_ENV="${ARMBIAN_ENV:-/boot/armbianEnv.txt}"
+OVERLAY_DIR="${OVERLAY_DIR:-/boot/overlay-user}"
+OVERLAY_MESHADV=lyra-zero-w-pi-header
+OVERLAY_STATION_G3=lyra-zero-w-station-g3
+HW_CONF="${HW_CONF:-/etc/lyra-hardware.conf}"
+RNS_CONFIG="${RNS_CONFIG:-/home/lyra/.reticulum/config}"
+REBOOT_FLAG_DIR="${REBOOT_FLAG_DIR:-/var/lib/lyra}"
+REBOOT_FLAG="${REBOOT_FLAG:-${REBOOT_FLAG_DIR}/hat-pinmux-reboot-required}"
+MESHTASTIC_CANDIDATES=(
+    /etc/meshtasticd/config.yaml
+    /etc/meshtasticd/config.yml
+    /root/.portduino/default/prefs/config.yaml
+)
+
+usage() {
+    cat <<EOF
+Usage: $0 {status|check|apply [meshadv|station-g3]|ensure}
+  status           Show desired vs active overlay, mismatch warning if any,
+                   and whether a reboot is pending.
+  check            Exit 0 if active overlay matches the desired profile,
+                   exit 1 (with a clear warning) otherwise.
+  apply [profile]  Set user_overlays in ${ARMBIAN_ENV} to the given profile
+                   (default: detected profile). Removes the other Lyra
+                   overlay if present, preserves other unrelated overlays,
+                   writes a reboot-required flag. Does NOT reboot.
+  ensure           If a mismatch is detected, apply the correct overlay
+                   (same as apply with no arg) and report; no-op if match.
+                   Safe to call from reticulum-mesh.service start.
+EOF
+}
+
+err() { printf 'lyra-hat-pinmux: %s\n' "$*" >&2; }
+log() { printf 'lyra-hat-pinmux: %s\n' "$*"; }
+
+require_root() {
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        err "this subcommand must be run as root (writes ${ARMBIAN_ENV} and ${REBOOT_FLAG})"
+        exit 1
+    fi
+}
+
+# Trim leading/trailing whitespace; collapse internal whitespace runs to single spaces.
+trim_space() {
+    printf '%s' "$1" | tr -s ' \t' ' '
+}
+
+# Read user_overlays= value (space-separated) from armbianEnv.txt.
+# Echoes the raw value (possibly empty) on stdout; returns 0 always.
+get_user_overlays() {
+    if [ -f "$ARMBIAN_ENV" ]; then
+        awk -F= '
+            /^[[:space:]]*user_overlays[[:space:]]*=/ {
+                $1=""; sub(/^[[:space:]]*/, "");
+                print; exit
+            }' "$ARMBIAN_ENV"
+    fi
+}
+
+# Detect active overlay from armbianEnv.txt.
+# Echoes one of: mesh meshadv, station-g3, none
+detect_active() {
+    local value
+    value=$(get_user_overlays)
+    if printf '%s' "$value" | grep -q "${OVERLAY_STATION_G3}\b"; then
+        echo station-g3
+    elif printf '%s' "$value" | grep -q "${OVERLAY_MESHADV}\b"; then
+        echo meshadv
+    else
+        echo none
+    fi
+}
+
+# Detect desired profile (arg > hw.conf > rns config > meshtastic config > default).
+# Echoes one of: meshadv, station-g3
+detect_desired() {
+    local explicit=${1:-}
+    if [ -n "$explicit" ]; then
+        case "$explicit" in
+            meshadv|station-g3) echo "$explicit"; return 0 ;;
+            *) err "unknown profile '$explicit' (use meshadv or station-g3)"; return 2 ;;
+        esac
+    fi
+
+    # 1. /etc/lyra-hardware.conf: hat= or radio_board=
+    if [ -r "$HW_CONF" ]; then
+        local hw
+        hw=$(awk -F= '
+            /^[[:space:]]*(hat|radio_board)[[:space:]]*=/ {
+                $1=""; sub(/^[[:space:]]*/, "");
+                gsub(/[[:space:]]*$/, "");
+                print; exit
+            }' "$HW_CONF" 2>/dev/null) || true
+        case "$hw" in
+            station-g3|station_g3|g3|stationg3) echo station-g3; return 0 ;;
+            meshadv|meshadv-pi-hat|meshadv-pi-hat-v1.1|wio-sx1262|wio)
+                echo meshadv; return 0 ;;
+        esac
+    fi
+
+    # 2. Reticulum config: radio_board= inside any [[SX126xInterface]] block.
+    if [ -r "$RNS_CONFIG" ]; then
+        local rb
+        rb=$(awk '
+            BEGIN { IGNORECASE=0 }
+            /^[[:space:]]*#/ { next }
+            /radio_board[[:space:]]*=/ {
+                sub(/.*radio_board[[:space:]]*=[[:space:]]*/, "");
+                gsub(/[[:space:]]*$/, "");
+                print; exit
+            }' "$RNS_CONFIG" 2>/dev/null) || true
+        case "$rb" in
+            station-g3|station_g3) echo station-g3; return 0 ;;
+            *"meshadv"*) echo meshadv; return 0 ;;
+        esac
+    fi
+
+    # 3. Meshtastic config (any candidate that exists): station-g3 hint wins.
+    local f
+    for f in "${MESHTASTIC_CANDIDATES[@]}"; do
+        if [ -r "$f" ]; then
+            if grep -qiE 'station[-_ ]?g3|uniteng' "$f" 2>/dev/null; then
+                echo station-g3; return 0
+            fi
+            if grep -qi 'meshtastic' "$f" 2>/dev/null; then
+                echo meshadv; return 0
+            fi
+        fi
+    done
+
+    # 4. Default.
+    echo meshadv
+}
+
+# Map a desired profile string (which can be a wizard-friendly variant) to
+# the .dtbo-name prefix used by armbianEnv.txt.
+overlay_for() {
+    case "$1" in
+        station-g3) echo "$OVERLAY_STATION_G3" ;;
+        meshadv)    echo "$OVERLAY_MESHADV" ;;
+        *) err "internal: unknown profile '$1'"; return 2 ;;
+    esac
+}
+
+friendly_name() {
+    case "$1" in
+        station-g3) echo "Station G3 (pin16 = RXEN out)" ;;
+        meshadv)    echo "MeshAdv (pin16 = GPS PPS in)" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+cmd_status() {
+    local desired active
+    desired=$(detect_desired)
+    active=$(detect_active)
+    echo "desired overlay profile : $desired  ($(friendly_name "$desired"))"
+    echo "active  overlay in armbianEnv.txt : $active"
+    if [ "$desired" = "$active" ]; then
+        echo "state                   : MATCH"
+    else
+        echo "state                   : MISMATCH"
+    fi
+    if [ -f "$REBOOT_FLAG" ]; then
+        echo "reboot required         : YES (flag at $REBOOT_FLAG)"
+    else
+        echo "reboot required         : no"
+    fi
+}
+
+cmd_check() {
+    local desired active
+    desired=$(detect_desired)
+    active=$(detect_active)
+    if [ "$desired" = "$active" ]; then
+        log "OK: armbianEnv.txt overlay matches desired profile ($desired)"
+        return 0
+    fi
+    err "WARNING: config wants $(friendly_name "$desired") but active overlay is $(friendly_name "$active"). Run '$0 apply' then REBOOT before starting the radio safely."
+    return 1
+}
+
+# apply: rewrite user_overlays in armbianEnv.txt to contain exactly one of
+# the two Lyra overlays (the chosen one), plus any other unrelated overlays.
+# Sets REBOOT_FLAG. Does NOT reboot. Returns 0 on success.
+cmd_apply() {
+    require_root
+    local desired explicit
+    explicit=${1:-}
+    desired=$(detect_desired "$explicit")
+    local wanted overlay_wanted
+    overlay_wanted=$(overlay_for "$desired")
+
+    # Verify the .dtbo file exists in OVERLAY_DIR before we mutate armbianEnv.txt.
+    if [ ! -f "${OVERLAY_DIR}/${overlay_wanted}.dtbo" ]; then
+        err "ERROR: ${OVERLAY_DIR}/${overlay_wanted}.dtbo not found; refusing to switch"
+        exit 2
+    fi
+
+    mkdir -p "$REBOOT_FLAG_DIR"
+
+    # Read existing user_overlays value (possibly empty).
+    local current
+    current=$(get_user_overlays)
+
+    # Strip both lyra overlays (any prior or duplicate entries) from the list.
+    local new_list=""
+    if [ -n "$current" ]; then
+        for tok in $current; do
+            case "$tok" in
+                "${OVERLAY_MESHADV}"|"${OVERLAY_STATION_G3}") continue ;;
+                *) new_list="${new_list:+${new_list} }$tok" ;;
+            esac
+        done
+    fi
+
+    # Append the wanted one (always exactly one lyra overlay).
+    new_list=$(trim_space "${new_list:+${new_list} }${overlay_wanted}")
+
+    if [ -f "$ARMBIAN_ENV" ] && grep -q '^[[:space:]]*user_overlays[[:space:]]*=' "$ARMBIAN_ENV"; then
+        # Replace the existing user_overlays= line in place; escape '&' for sed.
+        local escaped
+        escaped=$(printf '%s' "$new_list" | sed 's/[&|]/\\&/g')
+        sed -i "s|^[[:space:]]*user_overlays[[:space:]]*=.*|user_overlays=${escaped}|" "$ARMBIAN_ENV"
+    else
+        # No user_overlays line at all - append a fresh one.
+        if [ ! -f "$ARMBIAN_ENV" ]; then
+            err "ERROR: ${ARMBIAN_ENV} does not exist; cannot set user_overlays"
+            exit 2
+        fi
+        printf '\nuser_overlays=%s\n' "$new_list" >> "$ARMBIAN_ENV"
+    fi
+
+    date -Iseconds > "$REBOOT_FLAG"
+
+    local active_after
+    active_after=$(detect_active)
+    if [ "$active_after" != "$desired" ]; then
+        err "ERROR: failed to set user_overlays to ${overlay_wanted}; active still ${active_after}"
+        exit 1
+    fi
+
+    log "WARNING: Config wants $(friendly_name "$desired") but pinmux overlay was previously $(friendly_name "$(detect_active_pre "$current")"). Updated ${ARMBIAN_ENV} - REBOOT REQUIRED before starting the radio safely."
+    log "active overlay after apply: $active_after"
+    log "reboot-required flag written to $REBOOT_FLAG"
+    log "do NOT reboot automatically; reboot manually when ready"
+}
+
+# Used purely for the diff message inside cmd_apply. Returns the overlay
+# name found in $1 (the pre-apply user_overlays string), or "none".
+detect_active_pre() {
+    case "$1" in
+        *"${OVERLAY_STATION_G3}"*) echo station-g3 ;;
+        *"${OVERLAY_MESHADV}"*)    echo meshadv ;;
+        *)                          echo none ;;
+    esac
+}
+
+cmd_ensure() {
+    local desired active
+    desired=$(detect_desired)
+    active=$(detect_active)
+    if [ "$desired" = "$active" ]; then
+        if [ -f "$REBOOT_FLAG" ]; then
+            log "WARNING: pinmux change still pending reboot (flag at $REBOOT_FLAG); radio may be unsafe until reboot"
+        fi
+        log "OK: pinmux overlay matches desired profile ($desired)"
+        return 0
+    fi
+    log "MISMATCH detected: desired=$desired active=$active - applying..."
+    cmd_apply "$desired"
+}
+
+case "${1:-}" in
+    status)  cmd_status ;;
+    check)   cmd_check ;;
+    apply)
+        shift || true
+        cmd_apply "${1:-}"
+        ;;
+    ensure)  cmd_ensure ;;
+    -h|--help|help|"") usage ;;
+    *) usage; exit 2 ;;
+esac

@@ -243,6 +243,14 @@ chroot_run "chown -R lyra:lyra /home/lyra/.rnsh && chmod 600 /home/lyra/.rnsh/al
 cp "$HERE/files/first-boot.service" "$MNT/etc/systemd/system/first-boot.service"
 cp "$HERE/files/first-boot-wizard.sh" "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
 chmod +x "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
+# HAT pinmux reconciliation helper: detects desired vs active device-tree
+# overlay for the LoRa HAT and (on apply) rewrites /boot/armbianEnv.txt
+# user_overlays= accordingly. Called by the wizard AND by reticulum-mesh-ctl
+# start; does NOT reboot automatically - the pinmux change takes effect at
+# the next boot, and the user is told to reboot via a wizard dialog / log
+# WARNING.
+cp "$HERE/files/lyra-hat-pinmux" "$MNT/usr/local/sbin/lyra-hat-pinmux"
+chmod +x "$MNT/usr/local/sbin/lyra-hat-pinmux"
 # The full interactive wizard (mode/board/HAT selection) does NOT auto-launch
 # on login - it's mentioned in the MOTD instead, and run manually via
 # `sudo lyra-setup`. Only the noninteractive identity-wipe phase (invoked by
@@ -360,7 +368,7 @@ if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
     date -Iseconds | tee "$MNT/etc/lyra-security-hardened" >/dev/null
 fi
 
-# --- 9d. Pi-compatible header pinmux overlay (hardware-verified live) -------
+# --- 9d. Pi-compatible header pinmux overlays (hardware-verified live) -----
 # Remaps the 40-pin header to match the Raspberry Pi family layout: SPI0 +
 # meshadv-HAT control lines (pins 12/19/21/23/36/38/40) plus the user I2C bus
 # (pins 3/5, matching the Pi's I2C1 position - for RTC/power-monitor HATs).
@@ -368,17 +376,37 @@ fi
 # testing this live (cs-gpios required, pin groups need an intermediate
 # subnode, one pin per node). Compiled here on the HOST (dtc is architecture-
 # independent - no need for the qemu chroot).
-echo "Compiling and installing the Pi-compatible header pinmux overlay (SPI0 + I2C)..."
+#
+# TWO overlays are built because physical pin 16 (RM_IO13) serves opposite
+# roles on the two supported HATs: MeshAdv + GPS HAT (PPS INPUT) vs BQ /
+# Uniteng Station G3 (RXEN OUTPUT, active-low, default HIGH = LNA off).
+# Loading both at once is undefined - the active one is selected by
+# /usr/local/sbin/lyra-hat-pinmux (wizard + reticulum-mesh-ctl start), which
+# edits user_overlays= in /boot/armbianEnv.txt. Out of the box the
+# MeshAdv overlay is the default - it's safe on bare unpopulated headers
+# (all LoRa control lines are valid inputs or default-high outputs, no
+# GPIO fights anything).
+echo "Compiling and installing the Pi-compatible header pinmux overlays (SPI0 + I2C + HAT control)..."
 if ! command -v dtc >/dev/null 2>&1; then
-    echo "WARNING: dtc (device-tree-compiler) not found on host - skipping header overlay. Install with: sudo apt-get install -y device-tree-compiler"
+    echo "WARNING: dtc (device-tree-compiler) not found on host - skipping header overlays. Install with: sudo apt-get install -y device-tree-compiler"
 else
+    mkdir -p "$MNT/boot/overlay-user"
+    # MeshAdv + GPS PPS (pin16 = INPUT) - DEFAULT.
     dtc -@ -I dts -O dtb \
         -o "$WORK/lyra-zero-w-pi-header.dtbo" \
         "$HERE/dts-overlay/lyra-zero-w-pi-header.dts"
-    mkdir -p "$MNT/boot/overlay-user"
     cp "$WORK/lyra-zero-w-pi-header.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-pi-header.dtbo"
+    # Station G3 (pin16 = RXEN OUTPUT, active-low, default HIGH).
+    dtc -@ -I dts -O dtb \
+        -o "$WORK/lyra-zero-w-station-g3.dtbo" \
+        "$HERE/dts-overlay/lyra-zero-w-station-g3.dts"
+    cp "$WORK/lyra-zero-w-station-g3.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-station-g3.dtbo"
+    # Default out of the box is MeshAdv (pin16 safe as input). The
+    # Station G3 overlay is also installed for first-boot wizard /
+    # lyra-hat-pinmux to select later, but is NOT in user_overlays by
+    # default - loading both .dtbo at once on the same pin is undefined.
     if grep -q '^user_overlays=' "$MNT/boot/armbianEnv.txt" 2>/dev/null; then
-        sed -i 's/^user_overlays=.*/&  lyra-zero-w-pi-header/; s/^user_overlays=  /user_overlays=/' "$MNT/boot/armbianEnv.txt"
+        sed -i 's/^user_overlays=.*/&  lyra-zero-w-pi-header/; s/^user_overlays=  /user_overlays=/; s/  lyra-zero-w-pi-header lyra-zero-w-pi-header/  lyra-zero-w-pi-header/' "$MNT/boot/armbianEnv.txt"
     else
         echo "user_overlays=lyra-zero-w-pi-header" >> "$MNT/boot/armbianEnv.txt"
     fi

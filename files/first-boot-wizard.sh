@@ -114,18 +114,79 @@ MODE=$(dialog --clear --backtitle "Lyra first-boot setup" \
     3>&1 1>&2 2>&3) || MODE=reticulum
 clear
 
+# Apply the chosen HAT (writes lyra-hardware.conf, updates RNS config if
+# needed, and runs lyra-hat-pinmux apply to switch /boot/armbianEnv.txt's
+# user_overlays). $1 is the chosen HAT key (e.g. "meshadv-pi-hat-v1.1" or
+# "station-g3"); $2 is the RNS radio_board name to write (same key in
+# practice); $3 is the pinmux-overlay profile name to apply
+# ("meshadv" or "station-g3"). Echoes the chosen radio_board name.
+apply_hat_choice() {
+    local choice="$1"          # wizard key, used as radio_board
+    local rns_rb="$2"          # alias for radio_board line (same here)
+    local pinmux_profile="$3"  # pinmux profile to apply
+
+    if [ -z "$choice" ]; then
+        choice="meshadv-pi-hat-v1.1"
+        rns_rb="meshadv-pi-hat-v1.1"
+        pinmux_profile="meshadv"
+    fi
+
+    echo "board=lyra-zero-w" > /etc/lyra-hardware.conf
+    echo "hat=$choice"        >> /etc/lyra-hardware.conf
+    echo "radio_board=$choice" >> /etc/lyra-hardware.conf
+
+    # Update /home/lyra/.reticulum/config's [[SX126xInterface]] radio_board
+    # line if present (preserving pin_cs=-1 and any other keys - sed updates
+    # only the radio_board value, doesn't invent a block if missing).
+    if [ -f /home/lyra/.reticulum/config ] && grep -q '^[[:space:]]*radio_board[[:space:]]*=' /home/lyra/.reticulum/config; then
+        sed -i "s/^\([[:space:]]*\)radio_board[[:space:]]*=.*/\\1radio_board = ${rns_rb}/" /home/lyra/.reticulum/config
+        chown lyra:lyra /home/lyra/.reticulum/config
+    fi
+
+    # Apply the pinmux overlay switch (writes /boot/armbianEnv.txt and sets
+    # a reboot-required flag). Must be root - the wizard is invoked
+    # interactively from a root shell (sudo lyra-setup), so this is fine.
+    local pinmux_ran=0
+    if [ -x /usr/local/sbin/lyra-hat-pinmux ]; then
+        if /usr/local/sbin/lyra-hat-pinmux apply "$pinmux_profile"; then
+            pinmux_ran=1
+        fi
+    fi
+
+    if [ "$pinmux_ran" -eq 1 ]; then
+        dialog --clear --backtitle "Lyra first-boot setup" --title "Reboot required" --msgbox "\
+Pinmux overlay updated to ${choice}. The LoRa radio will not be wired correctly\n\
+until you REBOOT, even though the rest of this wizard is finishing now.\n\
+\n\
+Reboot now (or manually) before relying on LoRa to avoid driving pin16 in\n\
+the wrong direction." 11 70
+        clear
+    fi
+
+    echo "$choice"
+}
+
+# Map a wizard HAT key to the lyra-hat-pinmux profile name.
+pinmux_profile_for_hat() {
+    printf '%s' "$1" | sed -E 's/meshadv-pi-hat.*/meshadv/; s/station[-_]g3.*/station-g3/'
+}
+
 if [ "$MODE" = "reticulum" ]; then
     BOARD=$(dialog --clear --menu "Select board:" 12 60 1 \
         "lyra-zero-w" "Luckfox Lyra Zero W" \
         3>&1 1>&2 2>&3) || BOARD="lyra-zero-w"
     clear
-    HAT=$(dialog --clear --menu "Select LoRa HAT (pinout still in progress - this just records your choice for now):" \
-        14 70 1 \
-        "wio-sx1262" "Seeed Wio SX1262 (pinout TBD)" \
-        3>&1 1>&2 2>&3) || HAT="wio-sx1262"
+    # Both HATs share the SPI0+I2C pinout, only the LoRa control lines differ.
+    # pin16 direction is the discriminator - switching requires rebooting
+    # and is handled by /usr/local/sbin/lyra-hat-pinmux.
+    HAT=$(dialog --clear --menu "Select LoRa HAT:" \
+        14 78 2 \
+        "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (+ optional GPS PPS on pin 16)" \
+        "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN - different overlay)" \
+        3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear
-    echo "board=$BOARD" > /etc/lyra-hardware.conf
-    echo "hat=$HAT" >> /etc/lyra-hardware.conf
+    HAT=$(apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")")
+    echo "board=$BOARD hat=$HAT -> /etc/lyra-hardware.conf written; Reticulum radio_board updated"
 
     # --- rnsh remote-shell access -------------------------------------
     # rnsh's allowlist is empty by default (accepts no connections at
@@ -179,6 +240,17 @@ if [ "$MODE" = "reticulum" ]; then
         echo "  rnsh --config /home/lyra/.rnsh --rnsconfig /home/lyra/.reticulum -p -l"
     fi
 elif [ "$MODE" = "meshtastic" ]; then
+    # Meshtastic mode still benefits from a sensible default pinmux overlay
+    # for whichever HAT the user is running. Offer the same choice so a
+    # future LoRa-capable Meshtastic build doesn't need its own wizard path.
+    HAT=$(dialog --clear --menu "Select LoRa HAT (Meshtastic mode):" \
+        14 78 2 \
+        "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (+ optional GPS PPS on pin 16)" \
+        "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN - different overlay)" \
+        3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
+    clear
+    HAT=$(apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")")
+    echo "board=lyra-zero-w hat=$HAT -> /etc/lyra-hardware.conf written; Meshtastic HAT selected"
     systemctl disable --now reticulum-mesh.service
     systemctl disable nomadnet.service rngit.service rrcd.service telemetry-collector.service retibbs.service rnsh.service 2>/dev/null || true
     systemctl enable --now meshtasticd.service

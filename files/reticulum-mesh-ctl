@@ -26,6 +26,21 @@ start_stack() {
     local attempt
 
     log "Starting Reticulum mesh stack"
+
+    # Reconcile the active device-tree overlay with the configured LoRa HAT
+    # BEFORE any radio service starts - if pin16 is being driven the wrong
+    # way (e.g. RXEN out for Station G3 when the user is actually on a
+    # MeshAdv HAT, or vice versa), the SPI driver will not know and the
+    # radio won't work. lyra-hat-pinmux ensure detects any mismatch from
+    # /etc/lyra-hardware.conf / Reticulum config and rewrites
+    # /boot/armbianEnv.txt's user_overlays= line; the actual pinmux change
+    # does NOT take effect until next boot, but at least we (a) catch the
+    # problem loudly and (b) leave the env in a consistent state for that
+    # next boot. ensure is best-effort: it never aborts the start sequence.
+    if [[ -x /usr/local/sbin/lyra-hat-pinmux ]]; then
+        /usr/local/sbin/lyra-hat-pinmux ensure || log "WARNING: lyra-hat-pinmux ensure failed"
+    fi
+
     if [[ -f "$LOGFILE" ]]; then
         first_new_line=$(( $(wc -l < "$LOGFILE") + 1 ))
     fi

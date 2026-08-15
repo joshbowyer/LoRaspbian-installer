@@ -1,5 +1,30 @@
 # Lyra Zero W → Raspberry Pi Zero 2W header pinmux (LoRa HAT compatibility)
 
+## Two overlays - mutually exclusive
+
+The gold image ships TWO `.dtbo` overlays for the 40-pin header because
+physical pin 16 (RM_IO13 / GPIO0_B5) serves opposite roles on the two
+supported HATs:
+
+| Overlay | HAT | Pin 16 role |
+|---|---|---|
+| `lyra-zero-w-pi-header` | MeshAdv Pi HAT v1.1 (+ optional GPS PPS) | **INPUT** (GPS PPS) |
+| `lyra-zero-w-station-g3` | BQ / Uniteng Station G3 | **OUTPUT** (RXEN/LNA_EN, active-low, default HIGH) |
+
+Loading both at once on the same pin (same bank/offset, opposite
+directions) is undefined. The active overlay is selected by
+`/usr/local/sbin/lyra-hat-pinmux` — called by the first-boot wizard AND
+by `reticulum-mesh-ctl` start, which detect the desired HAT from
+`/etc/lyra-hardware.conf`, `/home/lyra/.reticulum/config`'s
+`radio_board = …` line, and (if present) the Meshtastic config. Switching
+edits `/boot/armbianEnv.txt`'s `user_overlays=` line; the actual pinmux
+change takes effect at the next boot — `lyra-hat-pinmux` does NOT reboot
+automatically.
+
+Out of the box the MeshAdv overlay is the default — pin16 left as an
+input is safe on an unpopulated header, and any properly-installed GPS
+HAT that drives a PPS pulse on pin16 will work.
+
 ## Goal
 
 Make the Lyra Zero W's 40-pin header electrically/logically match the

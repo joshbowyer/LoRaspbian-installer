@@ -1,0 +1,170 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Remaps the Lyra Zero W's 40-pin header for the BQ / Uniteng Station G3
+ * SX126x LoRa HAT (RPi-Zero-2W-daughterboard path used by reticulum-hat-mod's
+ * SX126xInterface.py BOARD_PROFILES "station-g3" radio_board entry).
+ *
+ * MUTUALLY EXCLUSIVE with lyra-zero-w-pi-header.dts - they both claim
+ * physical pin 16 (RM_IO13 / GPIO0_B5 / bank0 offset 0x0d) but in opposite
+ * directions: this overlay drives it as an OUTPUT (active-low RXEN / LNA_EN,
+ * default HIGH = LNA disabled at boot); the MeshAdv overlay configures it
+ * as an INPUT (GPS PPS). Do NOT load both .dtbo files at once. Switch via
+ * /usr/local/sbin/lyra-hat-pinmux.
+ *
+ * Shares SPI0 (pins 19/21/23/40) and I2C (pins 3/5) with the MeshAdv
+ * overlay - those fragments are identical. Only the LoRa control group
+ * differs: Station G3 uses pin15 IRQ/DIO1 + pin18 BUSY + pin11 TXEN/PA_EN
+ * + pin16 RXEN/LNA_EN instead of the MeshAdv pin36 IRQ + pin38 BUSY +
+ * pin12 RESET-only path (and instead of the GPS-PPS INPUT on pin16). The
+ * driver reads pin12 RESET via libgpiod (same as MeshAdv), so we still
+ * pinmux pin12 here as plain GPIO output - default HIGH.
+ *
+ * All pin values were extracted from the LIVE board's compiled device tree
+ * and the official Luckfox pinout diagram, cross-referenced against josh's
+ * own RMIO/pinctrl table - same source-of-truth as lyra-zero-w-pi-header.dts.
+ * Physical pin -> function -> RM_IO -> chip GPIO pin -> rockchip,pins value
+ *   19 MOSI    -> RM_IO6  -> GPIO0_A6 (chip 6)  -> <0x00 0x06 0x53 ...>
+ *   21 MISO    -> RM_IO7  -> GPIO0_A7 (chip 7)  -> <0x00 0x07 0x54 ...>
+ *   23 SCLK    -> RM_IO8  -> GPIO0_B0 (chip 8)  -> <0x00 0x08 0x52 ...>
+ *   40 CSN0/CS -> RM_IO18 -> GPIO0_C2 (chip 18) -> <0x00 0x12 0x55 ...>
+ *   11 TXEN/PA_EN  -> RM_IO3  -> GPIO0_A3 (chip 3)  -> plain GPIO output (default LOW = PA off)
+ *   12 RESET       -> RM_IO14 -> GPIO0_B6 (chip 14) -> plain GPIO output (default HIGH = not in reset)
+ *   15 IRQ2/DIO1   -> RM_IO5  -> GPIO0_A5 (chip 5)  -> plain GPIO input
+ *   16 RXEN/LNA_EN -> RM_IO13 -> GPIO0_B5 (chip 13) -> plain GPIO output (default HIGH = LNA off)
+ *   18 BUSY2       -> RM_IO12 -> GPIO0_B4 (chip 12) -> plain GPIO input
+ *    3 I2C_SDA -> RM_IO0  -> GPIO0_A0 (chip 0)  -> <0x00 0x00 0x1f ...>
+ *    5 I2C_SCL -> RM_IO1  -> GPIO0_A1 (chip 1)  -> <0x00 0x01 0x1e ...>
+ */
+
+/ {
+	fragment@0 {
+		target = <&pinctrl>;
+		__overlay__ {
+			/* Pin groups must live inside an intermediate named subnode, not
+			 * directly as children of &pinctrl - matches lyra-zero-w-pi-header.dts
+			 * and the on-base-tree pattern (e.g. rm_io6 { rm-io6-spi0-mosi {...}; }). */
+			lora_pi {
+				lora_pi_spi0_mosi: lora-pi-spi0-mosi {
+					rockchip,pins = <0x00 0x06 0x53 &pcfg_pull_none_drv_level_3>; /* pin19 MOSI (RM_IO6) */
+				};
+				lora_pi_spi0_miso: lora-pi-spi0-miso {
+					rockchip,pins = <0x00 0x07 0x54 &pcfg_pull_none_drv_level_3>; /* pin21 MISO (RM_IO7) */
+				};
+				lora_pi_spi0_clk: lora-pi-spi0-clk {
+					rockchip,pins = <0x00 0x08 0x52 &pcfg_pull_none_drv_level_3>; /* pin23 SCLK (RM_IO8) */
+				};
+				lora_pi_spi0_cs0: lora-pi-spi0-cs0 {
+					rockchip,pins = <0x00 0x12 0x55 &pcfg_pull_none_drv_level_3>; /* pin40 CSN0 (RM_IO18) */
+				};
+
+				lora_pi_reset: lora-pi-reset {
+					/* pin12, GPIO0_B6 (chip 14 = bank0 offset 14 = 0x0e),
+					 * plain GPIO output, default high (not in reset). Same as
+					 * MeshAdv overlay - G3 still needs a reset line. */
+					rockchip,pins = <0x00 0x0e 0x00 &pcfg_output_high>;
+				};
+
+				lora_pi_txen: lora-pi-txen {
+					/* pin11 (Station G3 TXEN/PA_EN, active-high), GPIO0_A3
+					 * (chip 3 = bank0 offset 3 / RM_IO3), plain GPIO output,
+					 * default LOW so the PA is disabled at boot until
+					 * software takes control. */
+					rockchip,pins = <0x00 0x03 0x00 &pcfg_output_low>;
+				};
+
+				lora_pi_irq2: lora-pi-irq2 {
+					/* pin15 (Station G3 IRQ/DIO1), GPIO0_A5 (chip 5 = bank0
+					 * offset 5 / RM_IO5), plain GPIO input. */
+					rockchip,pins = <0x00 0x05 0x00 &pcfg_pull_none>;
+				};
+
+				lora_pi_rxen: lora-pi-rxen {
+					/* pin16 (Station G3 RXEN/LNA_EN, active-LOW), GPIO0_B5
+					 * (chip 13 = bank0 offset 13 / RM_IO13), plain GPIO
+					 * output, default HIGH so the LNA is disabled at boot
+					 * (active-low: asserted/enabled = LOW). CONFLICTS with
+					 * lyra-zero-w-pi-header.dts's pin16 GPS PPS INPUT on the
+					 * same bank/offset - never load both overlays. */
+					rockchip,pins = <0x00 0x0d 0x00 &pcfg_output_high>;
+				};
+
+				lora_pi_busy2: lora-pi-busy2 {
+					/* pin18 (Station G3 BUSY), GPIO0_B4 (chip 12 = bank0
+					 * offset 12 / RM_IO12), plain GPIO input. */
+					rockchip,pins = <0x00 0x0c 0x00 &pcfg_pull_none>;
+				};
+
+				lora_pi_i2c0_sda: lora-pi-i2c0-sda {
+					/* pin3 I2C_SDA, GPIO0_A0 (RM_IO0) */
+					rockchip,pins = <0x00 0x00 0x1f &pcfg_pull_none>;
+				};
+				lora_pi_i2c0_scl: lora-pi-i2c0-scl {
+					/* pin5 I2C_SCL, GPIO0_A1 (RM_IO1) */
+					rockchip,pins = <0x00 0x01 0x1e &pcfg_pull_none>;
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spi0>; /* spi@ff120000 */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_pi_spi0_mosi &lora_pi_spi0_miso &lora_pi_spi0_clk &lora_pi_spi0_cs0>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			/* CS pin also declared as GPIO the driver toggles in software,
+			 * in addition to being pinmux'd to the hardware CSN0 function
+			 * above. Required for the spi_master to register (same fix as
+			 * lyra-zero-w-pi-header.dts).
+			 * pin40 CSN0 = GPIO0_C2 (chip 18 = bank0 offset 18 = 0x12), active-low.
+			 */
+			cs-gpios = <&gpio0 0x12 0x01>;
+
+			lora@0 {
+				/* Userspace driver (reticulum-hat-mod's SX126xInterface.py) talks
+				 * over /dev/spidevX.Y. */
+				compatible = "rockchip,spidev";
+				reg = <0x00>;
+				spi-max-frequency = <8000000>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/";
+		__overlay__ {
+			lora-pi-gpio-lines {
+				compatible = "gpio-consumer-placeholder"; /* documentation only, not a real binding */
+				/* Station G3 control lines are consumed directly by
+				 * SX126xInterface.py via libgpiod using these GPIO numbers:
+				 *   RESET (pin12): gpiochip0 line 14 (bank0 offset 14 / GPIO0_B6)
+				 *   TXEN  (pin11): gpiochip0 line 3  (bank0 offset 3  / GPIO0_A3)
+				 *   IRQ2  (pin15): gpiochip0 line 5  (bank0 offset 5  / GPIO0_A5)
+				 *   RXEN  (pin16): gpiochip0 line 13 (bank0 offset 13 / GPIO0_B5)
+				 *   BUSY2 (pin18): gpiochip0 line 12 (bank0 offset 12 / GPIO0_B4)
+				 * No kernel driver needed; pinctrl-0 above just claims/mux's them.
+				 */
+				pinctrl-names = "default";
+				pinctrl-0 = <&lora_pi_reset &lora_pi_txen &lora_pi_irq2 &lora_pi_rxen &lora_pi_busy2>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target = <&i2c0>; /* i2c@ff040000 - matches Pi physical pins 3/5 (I2C1 position) */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_pi_i2c0_sda &lora_pi_i2c0_scl>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			clock-frequency = <100000>;
+		};
+	};
+};

@@ -155,6 +155,8 @@ fi
 # bundled "meshadv-pi-hat-v1.1" radio_board profile works unmodified. See
 # files/sx126x_platforms and reticulum-config-base for details.
 cp "$HERE/files/sx126x_platforms" "$MNT/home/lyra/.reticulum/interfaces/sx126x_platforms"
+# Board overlay for HATs not yet bundled upstream (MeshAdv Mini, etc.).
+cp "$HERE/files/sx126x_boards" "$MNT/home/lyra/.reticulum/interfaces/sx126x_boards"
 
 # --- 7. meshtasticd (installed, disabled) ------------------------------------
 echo "Installing meshtasticd (disabled by default)..."
@@ -369,42 +371,39 @@ if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
 fi
 
 # --- 9d. Pi-compatible header pinmux overlays (hardware-verified live) -----
-# Remaps the 40-pin header to match the Raspberry Pi family layout: SPI0 +
-# meshadv-HAT control lines (pins 12/19/21/23/36/38/40) plus the user I2C bus
-# (pins 3/5, matching the Pi's I2C1 position - for RTC/power-monitor HATs).
-# See dts-overlay/README.md for the full derivation and the real bugs found
-# testing this live (cs-gpios required, pin groups need an intermediate
-# subnode, one pin per node). Compiled here on the HOST (dtc is architecture-
-# independent - no need for the qemu chroot).
+# Remaps the 40-pin header to match Raspberry Pi HAT layouts: SPI0 + control
+# lines + user I2C (pins 3/5). See dts-overlay/README.md. Compiled on HOST
+# (dtc is arch-independent).
 #
-# TWO overlays are built because physical pin 16 (RM_IO13) serves opposite
-# roles on the two supported HATs: MeshAdv + GPS HAT (PPS INPUT) vs BQ /
-# Uniteng Station G3 (RXEN OUTPUT, active-low, default HIGH = LNA off).
-# Loading both at once is undefined - the active one is selected by
-# /usr/local/sbin/lyra-hat-pinmux (wizard + reticulum-mesh-ctl start), which
-# edits user_overlays= in /boot/armbianEnv.txt. Out of the box the
-# MeshAdv overlay is the default - it's safe on bare unpopulated headers
-# (all LoRa control lines are valid inputs or default-high outputs, no
-# GPIO fights anything).
+# THREE mutually exclusive overlays — load exactly one via lyra-hat-pinmux:
+#   lyra-zero-w-pi-header      MeshAdv Pi Hat v1.1 (CS40 RST12 PPS16) DEFAULT
+#   lyra-zero-w-meshadv-mini   MeshAdv Mini (CS24 RST18 RXEN32 PPS11)
+#   lyra-zero-w-station-g3     Station G3 (pin16 = RXEN out)
+# Mini MUST NOT use pi-header: that drives pin12 as RESET; on Mini pin12 is
+# Fan PWM.
 echo "Compiling and installing the Pi-compatible header pinmux overlays (SPI0 + I2C + HAT control)..."
 if ! command -v dtc >/dev/null 2>&1; then
     echo "WARNING: dtc (device-tree-compiler) not found on host - skipping header overlays. Install with: sudo apt-get install -y device-tree-compiler"
 else
     mkdir -p "$MNT/boot/overlay-user"
-    # MeshAdv + GPS PPS (pin16 = INPUT) - DEFAULT.
+    # MeshAdv Pi Hat v1.1 + GPS PPS (pin16 = INPUT) - DEFAULT.
     dtc -@ -I dts -O dtb \
         -o "$WORK/lyra-zero-w-pi-header.dtbo" \
         "$HERE/dts-overlay/lyra-zero-w-pi-header.dts"
     cp "$WORK/lyra-zero-w-pi-header.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-pi-header.dtbo"
+    # MeshAdv Mini (CS pin24 / RST pin18 / RXEN pin32 / PPS pin11).
+    dtc -@ -I dts -O dtb \
+        -o "$WORK/lyra-zero-w-meshadv-mini.dtbo" \
+        "$HERE/dts-overlay/lyra-zero-w-meshadv-mini.dts"
+    cp "$WORK/lyra-zero-w-meshadv-mini.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-meshadv-mini.dtbo"
     # Station G3 (pin16 = RXEN OUTPUT, active-low, default HIGH).
     dtc -@ -I dts -O dtb \
         -o "$WORK/lyra-zero-w-station-g3.dtbo" \
         "$HERE/dts-overlay/lyra-zero-w-station-g3.dts"
     cp "$WORK/lyra-zero-w-station-g3.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-station-g3.dtbo"
-    # Default out of the box is MeshAdv (pin16 safe as input). The
-    # Station G3 overlay is also installed for first-boot wizard /
-    # lyra-hat-pinmux to select later, but is NOT in user_overlays by
-    # default - loading both .dtbo at once on the same pin is undefined.
+    # Default out of the box is MeshAdv Pi Hat (pin16 safe as input). Mini
+    # and Station G3 overlays are installed for wizard / lyra-hat-pinmux but
+    # are NOT in user_overlays by default.
     if grep -q '^user_overlays=' "$MNT/boot/armbianEnv.txt" 2>/dev/null; then
         sed -i 's/^user_overlays=.*/&  lyra-zero-w-pi-header/; s/^user_overlays=  /user_overlays=/; s/  lyra-zero-w-pi-header lyra-zero-w-pi-header/  lyra-zero-w-pi-header/' "$MNT/boot/armbianEnv.txt"
     else

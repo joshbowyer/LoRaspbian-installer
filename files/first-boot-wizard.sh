@@ -119,7 +119,7 @@ clear
 # user_overlays). $1 is the chosen HAT key (e.g. "meshadv-pi-hat-v1.1" or
 # "station-g3"); $2 is the RNS radio_board name to write (same key in
 # practice); $3 is the pinmux-overlay profile name to apply
-# ("meshadv" or "station-g3"). Echoes the chosen radio_board name.
+# ("meshadv", "meshadv-mini", or "station-g3"). Echoes the chosen radio_board name.
 apply_hat_choice() {
     local choice="$1"          # wizard key, used as radio_board
     local rns_rb="$2"          # alias for radio_board line (same here)
@@ -158,8 +158,8 @@ apply_hat_choice() {
 Pinmux overlay updated to ${choice}. The LoRa radio will not be wired correctly\n\
 until you REBOOT, even though the rest of this wizard is finishing now.\n\
 \n\
-Reboot now (or manually) before relying on LoRa to avoid driving pin16 in\n\
-the wrong direction." 11 70
+Reboot now (or manually) before relying on LoRa — wrong overlay can drive\n\
+RESET onto Mini fan PWM (pin12) or flip pin16 direction on G3 vs Pi Hat." 12 70
         clear
     fi
 
@@ -167,8 +167,14 @@ the wrong direction." 11 70
 }
 
 # Map a wizard HAT key to the lyra-hat-pinmux profile name.
+# meshadv-mini must be matched before meshadv-pi-hat (substring order).
 pinmux_profile_for_hat() {
-    printf '%s' "$1" | sed -E 's/meshadv-pi-hat.*/meshadv/; s/station[-_]g3.*/station-g3/'
+    case "$1" in
+        meshadv-mini|meshadv_mini) echo meshadv-mini ;;
+        station-g3|station_g3)     echo station-g3 ;;
+        meshadv-pi-hat*|meshadv)   echo meshadv ;;
+        *) printf '%s' "$1" | sed -E 's/meshadv-mini.*/meshadv-mini/; s/meshadv-pi-hat.*/meshadv/; s/station[-_]g3.*/station-g3/' ;;
+    esac
 }
 
 if [ "$MODE" = "reticulum" ]; then
@@ -176,13 +182,14 @@ if [ "$MODE" = "reticulum" ]; then
         "lyra-zero-w" "Luckfox Lyra Zero W" \
         3>&1 1>&2 2>&3) || BOARD="lyra-zero-w"
     clear
-    # Both HATs share the SPI0+I2C pinout, only the LoRa control lines differ.
-    # pin16 direction is the discriminator - switching requires rebooting
-    # and is handled by /usr/local/sbin/lyra-hat-pinmux.
+    # HATs share SPI0 data + I2C positions; control lines and CS pin differ.
+    # Wrong overlay is dangerous (Mini pin12 = Fan PWM, not RESET). Switching
+    # requires reboot via /usr/local/sbin/lyra-hat-pinmux.
     HAT=$(dialog --clear --menu "Select LoRa HAT:" \
-        14 78 2 \
-        "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (+ optional GPS PPS on pin 16)" \
-        "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN - different overlay)" \
+        16 78 3 \
+        "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (CS40 RST12, optional GPS PPS pin16)" \
+        "meshadv-mini"        "MeshAdv Mini (CS24 RST18 RXEN32, GPS PPS pin11 — NOT pin12)" \
+        "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN — different overlay)" \
         3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear
     HAT=$(apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")")
@@ -244,9 +251,10 @@ elif [ "$MODE" = "meshtastic" ]; then
     # for whichever HAT the user is running. Offer the same choice so a
     # future LoRa-capable Meshtastic build doesn't need its own wizard path.
     HAT=$(dialog --clear --menu "Select LoRa HAT (Meshtastic mode):" \
-        14 78 2 \
-        "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (+ optional GPS PPS on pin 16)" \
-        "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN - different overlay)" \
+        16 78 3 \
+        "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (CS40 RST12, optional GPS PPS pin16)" \
+        "meshadv-mini"        "MeshAdv Mini (CS24 RST18 RXEN32, GPS PPS pin11 — NOT pin12)" \
+        "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN — different overlay)" \
         3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear
     HAT=$(apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")")

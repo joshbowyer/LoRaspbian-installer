@@ -1,0 +1,36 @@
+# SX126x radio_board overlay for HATs not (yet) bundled in reticulum-hat-mod.
+#
+# Loaded automatically by SX126xInterface.py from
+# ~/.reticulum/interfaces/sx126x_boards (copied there by build-lyra-gold-image.sh).
+#
+# meshadv-mini: chrismyers2000/MeshAdv-Mini pinout on a 40-pin Pi header.
+#   CS   phys 24 (BCM8)   — Lyra overlay HW CSN0 on RM_IO10; use pin_cs=-1 in config
+#   IRQ  phys 36 (BCM16)
+#   BUSY phys 38 (BCM20)
+#   RST  phys 18 (BCM24)  — NEVER phys 12 (Fan PWM on Mini)
+#   RXEN phys 32 (BCM12)
+#   TXEN unused (DIO2 RF switch)
+#   PPS  phys 11 (BCM17)  — pinmux only; not a board-profile field
+#   DIO2_AS_RF_SWITCH, DIO3_TCXO 1.8V
+#
+# Requires lyra-zero-w-meshadv-mini.dtbo (NOT pi-header / station-g3).
+
+[boards]
+
+  [[meshadv-mini]]
+    board_name = meshadv-mini
+    profile_version = 1
+    header_pin_cs = 24
+    header_pin_irq = 36
+    header_pin_busy = 38
+    header_pin_reset = 18
+    header_pin_txen = -1
+    header_pin_rxen = 32
+    spi_bus = 0
+    spi_cs = 0
+    dio2_rf_switch = True
+    dio3_tcxo_voltage = 1.8
+    tcxo_delay_ms = 5.0
+    txpower_max = 22
+    rx_boosted_gain = True
+    profile_notes = MeshAdv Mini (chrismyers2000). CS pin24, RST pin18, IRQ36, BUSY38, RXEN32, DIO2 RF switch + DIO3 TCXO 1.8V. On Lyra Zero W use overlay lyra-zero-w-meshadv-mini and pin_cs=-1 so spidev owns HW CS on RM_IO10. Do not use meshadv-pi-hat-v1.1 pinmux (that drives pin12 as RESET; Mini pin12 is Fan PWM).

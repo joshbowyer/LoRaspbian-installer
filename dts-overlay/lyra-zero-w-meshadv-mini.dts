@@ -1,0 +1,153 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Remaps the Lyra Zero W's 40-pin header for the MeshAdv Mini SX126x HAT
+ * (chrismyers2000/MeshAdv-Mini: CS BCM8 / phys 24, Reset BCM24 / phys 18,
+ * IRQ BCM16 / phys 36, Busy BCM20 / phys 38, RXen BCM12 / phys 32,
+ * optional GPS PPS on phys 11 / BCM17, DIO2 RF switch + DIO3 TCXO).
+ *
+ * MUTUALLY EXCLUSIVE with:
+ *   lyra-zero-w-pi-header.dts   (MeshAdv Pi Hat v1.1 — CS40 / RST12 / PPS16)
+ *   lyra-zero-w-station-g3.dts  (Station G3 — different control set + pin16 RXEN)
+ *
+ * Do NOT load more than one of these .dtbo files at once. Switch via
+ * /usr/local/sbin/lyra-hat-pinmux.
+ *
+ * CRITICAL: physical pin 12 is Fan PWM on MeshAdv Mini. This overlay must
+ * NEVER claim pin12 as RESET (that is the Pi Hat v1.1 wiring). RESET is on
+ * pin18 here.
+ *
+ * Physical pin -> function -> RM_IO -> chip GPIO -> rockchip,pins
+ *   19 MOSI    -> RM_IO6  -> GPIO0_A6 (chip 6)  -> <0x00 0x06 0x53 ...>
+ *   21 MISO    -> RM_IO7  -> GPIO0_A7 (chip 7)  -> <0x00 0x07 0x54 ...>
+ *   23 SCLK    -> RM_IO8  -> GPIO0_B0 (chip 8)  -> <0x00 0x08 0x52 ...>
+ *   24 CSN0/CS -> RM_IO10 -> GPIO0_B2 (chip 10) -> <0x00 0x0a 0x55 ...>
+ *   36 IRQ     -> RM_IO29 -> GPIO1_D1 (chip 57) -> plain GPIO input
+ *   38 BUSY    -> RM_IO17 -> GPIO0_C1 (chip 17) -> plain GPIO input
+ *   18 RESET   -> RM_IO12 -> GPIO0_B4 (chip 12) -> plain GPIO output high
+ *   32 RXEN    -> RM_IO30 -> GPIO1_D2 (chip 58) -> plain GPIO output low
+ *   11 PPS     -> RM_IO3  -> GPIO0_A3 (chip 3)  -> plain GPIO input
+ *    3 I2C_SDA -> RM_IO0  -> GPIO0_A0 (chip 0)  -> <0x00 0x00 0x1f ...>
+ *    5 I2C_SCL -> RM_IO1  -> GPIO0_A1 (chip 1)  -> <0x00 0x01 0x1e ...>
+ *
+ * Pin 24 = RM_IO10 confirmed from Luckfox Zero W interactive pinout diagram
+ * and official rockchip-luckfox-lyra-zero-w-spi0-2cs-spidev (CS0 on RM_IO10).
+ */
+
+/ {
+	fragment@0 {
+		target = <&pinctrl>;
+		__overlay__ {
+			/* Pin groups must live inside an intermediate named subnode.
+			 * Same nesting pattern as lyra-zero-w-pi-header.dts. */
+			lora_mini {
+				lora_mini_spi0_mosi: lora-mini-spi0-mosi {
+					rockchip,pins = <0x00 0x06 0x53 &pcfg_pull_none_drv_level_3>; /* pin19 MOSI (RM_IO6) */
+				};
+				lora_mini_spi0_miso: lora-mini-spi0-miso {
+					rockchip,pins = <0x00 0x07 0x54 &pcfg_pull_none_drv_level_3>; /* pin21 MISO (RM_IO7) */
+				};
+				lora_mini_spi0_clk: lora-mini-spi0-clk {
+					rockchip,pins = <0x00 0x08 0x52 &pcfg_pull_none_drv_level_3>; /* pin23 SCLK (RM_IO8) */
+				};
+				lora_mini_spi0_cs0: lora-mini-spi0-cs0 {
+					/* pin24 CSN0 (RM_IO10 / GPIO0_B2) — MeshAdv Mini CS, NOT pin40 */
+					rockchip,pins = <0x00 0x0a 0x55 &pcfg_pull_none_drv_level_3>;
+				};
+
+				lora_mini_irq: lora-mini-irq {
+					/* pin36, GPIO1_D1 (bank1 offset 25 = 0x19), plain GPIO input */
+					rockchip,pins = <0x01 0x19 0x00 &pcfg_pull_down>;
+				};
+
+				lora_mini_busy: lora-mini-busy {
+					/* pin38, GPIO0_C1 (bank0 offset 17 = 0x11), plain GPIO input */
+					rockchip,pins = <0x00 0x11 0x00 &pcfg_pull_none>;
+				};
+
+				lora_mini_reset: lora-mini-reset {
+					/* pin18 RESET, GPIO0_B4 (bank0 offset 12 = 0x0c / RM_IO12).
+					 * Default HIGH (not in reset). NEVER pin12 on Mini (fan PWM). */
+					rockchip,pins = <0x00 0x0c 0x00 &pcfg_output_high>;
+				};
+
+				lora_mini_rxen: lora-mini-rxen {
+					/* pin32 RXEN, GPIO1_D2 (bank1 offset 26 = 0x1a / RM_IO30).
+					 * Default LOW so RX path stays off until userspace drives it. */
+					rockchip,pins = <0x01 0x1a 0x00 &pcfg_output_low>;
+				};
+
+				lora_mini_pps: lora-mini-pps {
+					/* pin11 GPS PPS INPUT (MeshAdv Mini GPS path). GPIO0_A3
+					 * (bank0 offset 3 / RM_IO3). Plain GPIO input, no pull. */
+					rockchip,pins = <0x00 0x03 0x00 &pcfg_pull_none>;
+				};
+
+				lora_mini_i2c0_sda: lora-mini-i2c0-sda {
+					/* pin3 I2C_SDA, GPIO0_A0 (RM_IO0) */
+					rockchip,pins = <0x00 0x00 0x1f &pcfg_pull_none>;
+				};
+				lora_mini_i2c0_scl: lora-mini-i2c0-scl {
+					/* pin5 I2C_SCL, GPIO0_A1 (RM_IO1) */
+					rockchip,pins = <0x00 0x01 0x1e &pcfg_pull_none>;
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spi0>; /* spi@ff120000 */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_mini_spi0_mosi &lora_mini_spi0_miso &lora_mini_spi0_clk &lora_mini_spi0_cs0>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			/* CS also as GPIO the driver toggles in software, in addition to
+			 * hardware CSN0 pinmux — required for spi_master to register
+			 * (same fix as lyra-zero-w-pi-header.dts).
+			 * pin24 CSN0 = GPIO0_B2 (bank0 offset 10 = 0x0a), active-low.
+			 */
+			cs-gpios = <&gpio0 0x0a 0x01>;
+
+			lora@0 {
+				compatible = "rockchip,spidev";
+				reg = <0x00>;
+				spi-max-frequency = <8000000>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/";
+		__overlay__ {
+			lora-mini-gpio-lines {
+				compatible = "gpio-consumer-placeholder"; /* documentation only */
+				/* Consumed by SX126xInterface.py via libgpiod:
+				 *   IRQ   (pin36): gpiochip1 line 25
+				 *   BUSY  (pin38): gpiochip0 line 17
+				 *   RESET (pin18): gpiochip0 line 12
+				 *   RXEN  (pin32): gpiochip1 line 26
+				 *   PPS   (pin11): gpiochip0 line 3  (userspace GPS clients)
+				 */
+				pinctrl-names = "default";
+				pinctrl-0 = <&lora_mini_irq &lora_mini_busy &lora_mini_reset &lora_mini_rxen &lora_mini_pps>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target = <&i2c0>; /* i2c@ff040000 - Pi physical pins 3/5 */
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_mini_i2c0_sda &lora_mini_i2c0_scl>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			clock-frequency = <100000>;
+		};
+	};
+};

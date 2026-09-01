@@ -45,13 +45,17 @@ build-lyra-gold-image.sh   # main build script - run this, on a Linux host (or W
 files/
   reticulum-config-base    # base RNS config incl. [[MeshAdv LoRa]] SX126x interface block
   sx126x_platforms         # GPIO/SPI pin-mapping overlay for reticulum-hat-mod's driver
+  sx126x_boards            # board profiles not (yet) upstream (meshadv-mini)
+  lyra-hat-pinmux          # switch user_overlays: meshadv | meshadv-mini | station-g3
   first-boot-wizard.sh     # on-device first-boot: identity wipe, WiFi fallback, mode/board select, passwd prompt
   first-boot.service       # systemd oneshot running the noninteractive half of the wizard at boot
   00-lyra-first-boot.sh    # profile.d hook triggering the interactive wizard on first login
   nomadnet.service         # NomadNet daemon unit
   rngit.service            # rngit (RRC chat) daemon unit
 dts-overlay/
-  lyra-zero-w-pi-header.dts        # THE devicetree overlay (SPI0 + I2C0), hardware-verified
+  lyra-zero-w-pi-header.dts        # MeshAdv Pi Hat v1.1 (CS40 RST12 PPS16) — default gold
+  lyra-zero-w-meshadv-mini.dts     # MeshAdv Mini (CS24 RST18 RXEN32 PPS11) — pinmux verified lyra2
+  lyra-zero-w-station-g3.dts       # Station G3 alternate control set
   lyra-zero-w-pi-spi0-lora.dts.template  # stale, kept only as historical reference - ignore
   README.md                # full pin-mapping derivation + every real bug found testing live
   dump-lyra-pinctrl.sh     # run on a live board over SSH to dump its pinctrl state
@@ -270,3 +274,136 @@ collaborator. Recon-only research (no code written) covered:
   root-cause investigation (see §7 above for the short version).
 - Main `README.md` in this repo — public-facing quick-start + hardware
   status table + WSL2 notes.
+
+## 12. MeshAdv Mini overlay (2026-09-01) — resume when hats arrive
+
+### Why this exists
+
+LoRaspbian originally targeted **MeshAdv Pi Hat v1.1** only
+(`lyra-zero-w-pi-header.dts`: CS pin **40**, RST pin **12**, PPS pin **16**).
+The **MeshAdv Mini** (chrismyers2000/MeshAdv-Mini) uses a different control
+set on the same 40-pin form factor. Loading the Pi Hat overlay on a Mini
+would drive **physical pin 12 as RESET** — on Mini that pin is **Fan PWM**,
+which is dangerous. A third, mutually exclusive overlay was added.
+
+### Pin mismatch (settled)
+
+| Function | MeshAdv Mini | MeshAdv Pi Hat v1.1 / old default |
+|---|---|---|
+| SPI MOSI/MISO/CLK | 19 / 21 / 23 | same |
+| CS | **24** (BCM8) | **40** |
+| RESET | **18** (BCM24) | **12** (Mini pin12 = Fan PWM — NEVER) |
+| IRQ / BUSY | 36 / 38 | same |
+| RXEN | **32** | platforms map / not default pi-header control |
+| GPS PPS | **11** | **16** |
+| Extra Mini | DIO2 RF switch, DIO3 TCXO 1.8V, GPS EN/UART optional | — |
+
+Mini yaml (upstream): CS:8 IRQ:16 Busy:20 Reset:24 RXen:12
+`DIO2_AS_RF_SWITCH` `DIO3_TCXO`.
+
+### Critical Lyra phys → RM_IO map (pin 24 was the gap)
+
+| Phys | Function (Mini) | RM_IO | gpio |
+|---|---|---|---|
+| 19/21/23 | SPI | 6/7/8 | SPI mux 0x53/0x54/0x52 |
+| **24 CS** | CSN0 | **RM_IO10** | **gpiochip0 line 10** (bank0 offset 0x0a), mux **0x55** |
+| **18 RST** | RESET out high | RM_IO12 | g0.12 |
+| 36 / 38 | IRQ / BUSY | 29 / 17 | g1.25 / g0.17 |
+| **32 RXEN** | out low default | RM_IO30 | g1.26 |
+| **11 PPS** | input | RM_IO3 | g0.3 |
+| 3/5 | I2C | 0/1 | i2c0 |
+
+**Pin 24 = RM_IO10** confirmed from:
+1. Luckfox Zero W interactive pinout WebP (`GPIO0_B2_d` / RM_IO10)
+2. Official DTBO `rockchip-luckfox-lyra-zero-w-spi0-2cs-spidev` (CS0 on RM_IO10)
+3. Cross-check: all previously verified pins (11,12,15,16,18,19,21,23,32,33,36,38,40) matched the same diagram
+
+Full 40-pin table lives in `dts-overlay/README.md`.
+
+### Files added/changed (this work)
+
+| Path | Role |
+|---|---|
+| `dts-overlay/lyra-zero-w-meshadv-mini.dts` | NEW overlay: SPI + CS RM_IO10, RST18, IRQ36, BUSY38, RXEN32 out low, PPS11 in, I2C 3/5; pinctrl group `lora_mini`; cs-gpios `<&gpio0 0x0a 0x01>` |
+| `files/sx126x_boards` | NEW hat-mod board overlay `[[meshadv-mini]]` (cs=24 reset=18 rxen=32 dio2=True dio3=1.8) |
+| `files/sx126x_platforms` | added `"24": ["gpiochip0", 10]` |
+| `files/lyra-hat-pinmux` | third profile `meshadv-mini`; detect **mini before** generic `meshadv` substring |
+| `files/first-boot-wizard.sh` | 3-option HAT menu + `pinmux_profile_for_hat` → meshadv-mini |
+| `build-lyra-gold-image.sh` | compile 3rd dtbo; install `sx126x_boards` beside platforms |
+| `dts-overlay/README.md` | rewritten for three overlays + Mini pin table + critical fan-PWM warning |
+
+Gold **default remains** `lyra-zero-w-pi-header` / `radio_board=meshadv-pi-hat-v1.1`.
+For Mini, config must use `radio_board = meshadv-mini` and `pin_cs = -1`
+(HW CS owned by spidev on pin24), same pin_cs=-1 pattern as Pi Hat on pin40.
+
+Overlays are **mutually exclusive**: only one of
+`lyra-zero-w-pi-header` | `lyra-zero-w-meshadv-mini` | `lyra-zero-w-station-g3`
+in `user_overlays=`.
+
+### What was verified on lyra2 (10.0.0.56) — pinmux only
+
+**NEVER touch lyra1 (10.0.0.108)** — it runs a real MeshAdv Pi Hat.
+
+On lyra2 only:
+- Host `dtc` compile of mini.dts OK
+- Installed mini `.dtbo` + updated pinmux/platforms/boards under
+  `/boot/overlay-user/`, `/usr/local/sbin/lyra-hat-pinmux`,
+  `/home/lyra/.reticulum/interfaces/`
+- Applied mini: live pinctrl group **`lora_mini`**, CS on **gpio0-10**,
+  cs-gpios offset **0xa**, `/dev/spidev0.0` + `/dev/i2c-0` up, no dmesg
+  pinmux errors
+- **Gotcha:** `lyra-hat-pinmux ensure` (and mesh startup paths that call it)
+  rewrites `user_overlays` from `radio_board` in reticulum config. If
+  `radio_board` is still `meshadv-pi-hat-v1.1`, ensure snaps back to
+  **pi-header**. Sticky Mini requires `radio_board = meshadv-mini`.
+- lyra2 was **restored to pi-header** after the pinmux smoke test (CS g0.18,
+  `lora_pi`). Mini dtbo + updated userspace files were **left installed**
+  on lyra2 for the next test pass. lyra2 hat conf may still say
+  `wio-sx1262` / `meshadv-pi-hat-v1.1` until a Mini is attached and config
+  is switched.
+
+### Access / infra for resume
+
+| Host | IP | Notes |
+|---|---|---|
+| lyra1 | 10.0.0.108 | MeshAdv Pi Hat — **DO NOT TOUCH** for Mini work |
+| lyra2 | 10.0.0.56 | Safe Mini test target; hostname `lyra2` |
+| josh-claw hub | 10.0.0.59 | RNS TCP hub :4242 |
+
+SSH: `ssh -i ~/.ssh/id_ed25519_minimax lyra@10.0.0.56`  
+sudo password historically `Lyra1234`.
+
+### Checklist when MeshAdv Mini hardware arrives
+
+1. Confirm physical board is Mini (CS on header pin 24 silk / docs), not Pi Hat v1.1.
+2. On **lyra2 only**:
+   ```bash
+   sudo lyra-hat-pinmux apply meshadv-mini
+   # edit ~/.reticulum/config [[MeshAdv LoRa]] (or hat conf):
+   #   radio_board = meshadv-mini
+   #   pin_cs = -1
+   # keep frequency/SF/etc. as needed; dio2/dio3 come from sx126x_boards
+   sudo reboot
+   ```
+3. After boot:
+   ```bash
+   lyra-hat-pinmux status
+   # expect overlay lyra-zero-w-meshadv-mini, CS gpio0-10 / lora_mini
+   ls -l /dev/spidev0.0 /dev/i2c-0
+   dmesg | tail -50   # no spi/pinctrl errors
+   ```
+4. Bring up Reticulum mesh / SX126x interface; confirm radio init (no BUSY hang,
+   CS responds, TX/RX path). RXEN should be driven by hat-mod from profile.
+5. Optional GPS on Mini: EN pin7 / UART pins 8–10 / PPS pin11 — pinmux has PPS
+   as GPIO in; UART/GPSEN not claimed by mini overlay yet (add later if needed).
+6. If sticky overlay keeps flipping to pi-header: check `radio_board` and any
+   mesh `ensure` path still reading the old board name.
+7. When e2e works: rebuild gold image so new flashes get all three dtbos +
+   sx126x_boards; push this commit if still local-only; update live inventory
+   docs if desired.
+8. Do **not** run Mini pinmux on lyra1 while Pi Hat is attached.
+
+### Commit note
+
+Local commit on this branch documents the above; **do not push** until the
+user asks (requested 2026-09-01: commit + handoff only, radio e2e after hats).

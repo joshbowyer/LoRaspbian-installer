@@ -21,6 +21,9 @@
 #   33 (TXEN)  -> gpiochip1 line 18  (GPIO1_C2 / RM_IO27, chip pin 50, bank1 offset 50-32=18)
 #   36 (IRQ)   -> gpiochip1 line 25  (GPIO1_D1 / RM_IO29, chip pin 57, bank1 offset 57-32=25)
 #   38 (BUSY)  -> gpiochip0 line 17  (GPIO0_C1 / RM_IO17)
+#   24 (CS MeshAdv Mini / Station G3 NSS) -> gpiochip0 line 10
+#                 (GPIO0_B2 / RM_IO10 — HW SPI0 CSN0 on mini overlay;
+#                 bit-bang path still maps here for station-g3-style CS)
 #   40 (CS)    -> gpiochip0 line 18  (GPIO0_C2 / RM_IO18 - bit-banged CS via
 #                 cs-gpios in the devicetree overlay, same approach the
 #                 bundled raspberry-pi profile uses for the MeshAdv HAT)
@@ -48,4 +51,4 @@
     platform_version = 1
     gpiochip = gpiochip0
     spi_bus_default = 0
-    header_pin_to_line = {"11": ["gpiochip0", 3], "12": ["gpiochip0", 14], "15": ["gpiochip0", 5], "16": ["gpiochip0", 13], "18": ["gpiochip0", 12], "32": ["gpiochip1", 26], "33": ["gpiochip1", 18], "36": ["gpiochip1", 25], "38": ["gpiochip0", 17], "40": ["gpiochip0", 18]}
+    header_pin_to_line = {"11": ["gpiochip0", 3], "12": ["gpiochip0", 14], "15": ["gpiochip0", 5], "16": ["gpiochip0", 13], "18": ["gpiochip0", 12], "24": ["gpiochip0", 10], "32": ["gpiochip1", 26], "33": ["gpiochip1", 18], "36": ["gpiochip1", 25], "38": ["gpiochip0", 17], "40": ["gpiochip0", 18]}

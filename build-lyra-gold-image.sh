@@ -20,11 +20,15 @@ WORK="$HERE/work"
 OUT="$HERE/out"
 mkdir -p "$WORK" "$OUT"
 
-IMAGE_URL="https://github.com/armbian/community/releases/download/26.8.0-trunk.7/Armbian_community_26.8.0-trunk.7_Luckfox-lyra-zero-w_trixie_vendor_6.1.115_minimal.img.xz"
+# Bump when Armbian community retires old trunks (26.8.0-trunk.7 went 404).
+IMAGE_URL="${LYRA_BASE_IMAGE_URL:-https://github.com/armbian/community/releases/download/26.11.0-trunk.36/Armbian_community_26.11.0-trunk.36_Luckfox-lyra-zero-w_trixie_vendor_6.1.115_minimal.img.xz}"
 IMAGE_XZ="$WORK/armbian-lyra.img.xz"
 IMAGE_RAW="$WORK/armbian-lyra.img"
 MNT="$WORK/mnt"
 SSH_PUBKEY_FILE="${SSH_PUBKEY_FILE:-$HOME/.ssh/id_ed25519_minimax.pub}"
+# Optional KEYED U-Boot binary (MeshAdv Mini GPS-on-UART0 safe). Not git-tracked;
+# pass LYRA_KEYED_UBOOT=/path/to/u-boot-rockchip-keyed.bin or drop under files/.
+KEYED_UBOOT_BIN="${LYRA_KEYED_UBOOT:-$HERE/files/u-boot-rockchip-keyed.bin}"
 
 # WiFi baked into the image at build time (solves the chicken-and-egg problem:
 # a freshly flashed card has no way to reach it over SSH to run the on-device
@@ -57,9 +61,18 @@ if [ -z "$LYRA_SECURITY_HARDEN" ] && [ -t 0 ]; then
     esac
 fi
 
-# --- 1. Download (cache-friendly: skip if already present) -----------------
+# --- 1. Download (cache-friendly: skip if already present + valid xz) -------
+need_download=0
 if [ ! -f "$IMAGE_XZ" ]; then
+    need_download=1
+elif ! xz -t "$IMAGE_XZ" 2>/dev/null; then
+    echo "Cached base image is corrupt; re-downloading..."
+    rm -f "$IMAGE_XZ"
+    need_download=1
+fi
+if [ "$need_download" -eq 1 ]; then
     echo "Downloading base Armbian image..."
+    echo "  URL: $IMAGE_URL"
     wget -q --show-progress "$IMAGE_URL" -O "$IMAGE_XZ"
 else
     echo "Using cached base image: $IMAGE_XZ"
@@ -68,6 +81,16 @@ fi
 echo "Decompressing to a fresh working copy..."
 rm -f "$IMAGE_RAW"
 xz -dc "$IMAGE_XZ" > "$IMAGE_RAW"
+
+# --- 1a. Optional KEYED U-Boot (bs=32k seek=1, same as platform_install.sh) ---
+if [ -f "$KEYED_UBOOT_BIN" ]; then
+    echo "Baking KEYED U-Boot from $KEYED_UBOOT_BIN ..."
+    dd if="$KEYED_UBOOT_BIN" of="$IMAGE_RAW" bs=32k seek=1 conv=notrunc status=none
+    echo "  KEYED U-Boot written (stop string: uboot)"
+else
+    echo "No KEYED U-Boot at $KEYED_UBOOT_BIN — stock Armbian U-Boot kept."
+    echo "  Mini HAT boards need post-flash KEYED (see u-boot/README.md)."
+fi
 
 # --- 1b. Grow the image before mounting --------------------------------------
 # The stock Armbian minimal image ships with a tiny root partition (~1.6GB,

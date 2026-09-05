@@ -6,3 +6,4 @@ work/
 # Build output
 out/
 client-setup/
+files/u-boot-rockchip-keyed.bin

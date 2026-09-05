@@ -150,9 +150,9 @@ u-boot/                    # KEYED autoboot fragment + flash notes (Mini)
 
 - **Onboard Mini GPS** waits on mainline RK3506 (no FIQ dual-claim). See
   Hardware status above. USB GPS works today if needed.
-- KEYED U-Boot is documented and verified on Mini boards; bake into the
-  gold image image still optional until the binary is shipped in-tree or
-  via release assets (see `u-boot/README.md`).
+- KEYED U-Boot is verified on Mini boards. Gold builds bake it when
+  `files/u-boot-rockchip-keyed.bin` (or `LYRA_KEYED_UBOOT=`) is present;
+  the binary is also a release asset (see `u-boot/README.md`).
 - `lyra:lyra` is the default login — wizard prompts to change it, not forced.
 - rngit install can still fail under qemu emulation; piwheels handles the
   common case.

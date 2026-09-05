@@ -316,14 +316,14 @@ chmod +x "$MNT/usr/local/sbin/lyra-first-boot-wizard.sh"
 cp "$HERE/files/lyra-hat-pinmux" "$MNT/usr/local/sbin/lyra-hat-pinmux"
 chmod +x "$MNT/usr/local/sbin/lyra-hat-pinmux"
 # The full interactive wizard (mode/board/HAT selection) does NOT auto-launch
-# on login - it's mentioned in the MOTD instead, and run manually via
-# `sudo lyra-setup`. Only the noninteractive identity-wipe phase (invoked by
-# first-boot.service below) still runs automatically at every first boot.
+# on login — motd-raspi.sh prints "sudo lyra-setup" until /etc/lyra-first-boot-done
+# exists. Wizard re-execs via sudo if started unprivileged. Only the
+# noninteractive identity-wipe phase (first-boot.service) runs automatically.
 ln -sf /usr/local/sbin/lyra-first-boot-wizard.sh "$MNT/usr/local/bin/lyra-setup"
 # Kept on disk for reference / manual re-enable, but never executable:
-# motd-raspi.sh (profile.d) owns the login banner. update-motd.d only runs
-# scripts with +x, so 644 is the hard disable (chmod -x alone has been
-# observed to leave 755 on some flashes).
+# motd-raspi.sh (profile.d) owns the login banner + setup reminder.
+# update-motd.d only runs scripts with +x, so 644 is the hard disable
+# (chmod -x alone has been observed to leave 755 on some flashes).
 cp "$HERE/files/10-lyra-setup-motd" "$MNT/etc/update-motd.d/10-lyra-setup-motd"
 chmod 644 "$MNT/etc/update-motd.d/10-lyra-setup-motd"
 cp "$HERE/files/22-lyra-services-motd" "$MNT/etc/update-motd.d/22-lyra-services-motd"

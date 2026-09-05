@@ -249,6 +249,18 @@ printf '%s%s║%s  %s%-10s%s %s\n' \
 printf '%s%s║%s  %s%-10s%s %s\n' \
   "$_CYAN" "$_B" "$_R" "$_WHITE" "Interfaces" "$_R" "$_TCP_CHIP"
 printf '%s%s%s%s\n' "$_CYAN" "$_B" "$_BOT" "$_R"
+
+# First-boot setup reminder (update-motd.d/10-lyra-setup-motd is intentionally
+# non-executable to keep Armbian MOTD quiet — this profile.d banner is the
+# real login path for interactive shells).
+if [ ! -f /etc/lyra-first-boot-done ]; then
+  printf '\n'
+  printf '%s%s⚠  Setup not finished%s — LoRa HAT / mesh mode still defaults.\n' "$_GOLD" "$_B" "$_R"
+  printf '   Run:  %ssudo lyra-setup%s\n' "$_CYAN$_B" "$_R"
+  printf '   Pick your HAT (MeshAdv Mini = CS24/RST18), then reboot if prompted.\n'
+  printf '   Until then, rnstatus may show %slora absent%s (wrong pinmux).\n' "$_GREY" "$_R"
+fi
+
 printf '\n'
 
 # --- cleanup ------------------------------------------------------------------
@@ -257,7 +269,8 @@ unset _R _B _D _CYAN _CYAN2 _MAG _BLUE _GREEN _GOLD _CORAL _RED _GREY _WHITE _PI
       _MODEL _TEMP _MEM _DISK _IP_CACHE _t _run_ids _rc \
       _ra _na _ma _RNGIT_STATE _NOMADNET_STATE _MESHTASTICD_STATE _LORA_STATE _TCP_STATE \
       _RNSTATUS_BIN _RNSTATUS_OUT \
-      _RNGIT_CHIP _NOMADNET_CHIP _LORA_CHIP _MESHTASTICD_CHIP _TCP_CHIP _TOP _MID _BOT
+      _RNGIT_CHIP _NOMADNET_CHIP _LORA_CHIP _MESHTASTICD_CHIP _TCP_CHIP _TOP _MID _BOT \
+      _rm _MESH_SVC_STATE _MESH_SVC_COLOR
 unset -f _iface_state _chip _kv _row 2>/dev/null
 
 # ─────────────────────────────────────────────────────────────────────────────

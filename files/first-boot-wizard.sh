@@ -38,10 +38,23 @@ if [ "${1:-}" = "--noninteractive-only" ]; then
     exit 0
 fi
 
-# --- Interactive wizard (runs on first login, over SSH or console) ---------
+# --- Interactive wizard (manual: sudo lyra-setup, or first login) ----------
 if [ -f "$MARKER_WIZARD" ]; then
     exit 0
 fi
+
+# Must be root: writes /etc, pinmux, systemctl enable. Unprivileged runs hit
+# polkit → pkttyagent (often missing) → "Access denied" mid-wizard with set -e.
+if [ "$(id -u)" -ne 0 ]; then
+    echo ""
+    echo "lyra-setup needs root (pinmux, systemd, /etc)."
+    echo "Re-running with sudo (enter the lyra password if prompted)..."
+    echo ""
+    exec sudo -E "$0" "$@"
+fi
+
+# SSH clients often leak xterm mouse sequences into dialog; ignore them.
+export DIALOGOPTS="${DIALOGOPTS:+${DIALOGOPTS} }--no-mouse"
 
 echo ""
 echo "=== Welcome! This looks like a fresh Lyra node - let's set it up. ==="

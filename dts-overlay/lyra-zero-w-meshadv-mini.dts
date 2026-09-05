@@ -84,6 +84,14 @@
 					rockchip,pins = <0x00 0x03 0x00 &pcfg_pull_none>;
 				};
 
+				lora_mini_gps_en: lora-mini-gps-en {
+					/* pin7 GPS EN (BCM4 / RM_IO2 / GPIO0_A2). MeshAdv Mini
+					 * enables GPS with gpio=4=op,dh (active HIGH). Default
+					 * LOW keeps GPS powered off for LoRa-first bring-up so
+					 * boot current stays within Lyra 3.3V/5V budget. */
+					rockchip,pins = <0x00 0x02 0x00 &pcfg_output_low>;
+				};
+
 				lora_mini_i2c0_sda: lora-mini-i2c0-sda {
 					/* pin3 I2C_SDA, GPIO0_A0 (RM_IO0) */
 					rockchip,pins = <0x00 0x00 0x1f &pcfg_pull_none>;
@@ -101,7 +109,22 @@
 		__overlay__ {
 			status = "okay";
 			pinctrl-names = "default";
-			pinctrl-0 = <&lora_mini_spi0_mosi &lora_mini_spi0_miso &lora_mini_spi0_clk &lora_mini_spi0_cs0>;
+			/*
+			 * Control lines MUST live on a real probed device's pinctrl-0.
+			 * A root node with compatible = "gpio-consumer-placeholder" never
+			 * binds, so RESET/RXEN/IRQ/BUSY/PPS never left GPIO-default and
+			 * stayed MUX UNCLAIMED on lyra2 — radio could float into a high
+			 * current state when the HAT was attached (boot hang before
+			 * userspace). SPI probes early; attaching the groups here applies
+			 * safe electrical defaults without gpio-hog (hog would lock the
+			 * lines and block SX126xInterface.py libgpiod access).
+			 */
+			pinctrl-0 = <
+				&lora_mini_spi0_mosi &lora_mini_spi0_miso
+				&lora_mini_spi0_clk &lora_mini_spi0_cs0
+				&lora_mini_irq &lora_mini_busy
+				&lora_mini_reset &lora_mini_rxen &lora_mini_pps
+			>;
 			#address-cells = <0x01>;
 			#size-cells = <0x00>;
 			/* CS also as GPIO the driver toggles in software, in addition to
@@ -120,26 +143,45 @@
 		};
 	};
 
+	/*
+	 * GPS EN is NOT needed by the LoRa userspace driver. Hog it low so the
+	 * pin stays driven even if something else rebinds SPI pinctrl later.
+	 * Enable GPS later by removing this hog (or a future "mini+gps" profile)
+	 * and driving pin7 high from userspace / a GPS overlay.
+	 */
 	fragment@2 {
+		target = <&gpio0>;
+		__overlay__ {
+			meshadv_mini_gps_en_hog {
+				gpio-hog;
+				gpios = <0x02 0x00>; /* GPIO0_A2 / RM_IO2 / phys pin7, ACTIVE_HIGH */
+				output-low;
+				line-name = "meshadv-mini-gps-en";
+			};
+		};
+	};
+
+	/* Docs-only map for operators; pinctrl applied via spi0 above. */
+	fragment@3 {
 		target-path = "/";
 		__overlay__ {
 			lora-mini-gpio-lines {
-				compatible = "gpio-consumer-placeholder"; /* documentation only */
-				/* Consumed by SX126xInterface.py via libgpiod:
+				compatible = "gpio-consumer-placeholder";
+				/* Consumed by SX126xInterface.py via libgpiod (not hogged):
 				 *   IRQ   (pin36): gpiochip1 line 25
 				 *   BUSY  (pin38): gpiochip0 line 17
 				 *   RESET (pin18): gpiochip0 line 12
 				 *   RXEN  (pin32): gpiochip1 line 26
-				 *   PPS   (pin11): gpiochip0 line 3  (userspace GPS clients)
+				 *   PPS   (pin11): gpiochip0 line 3
+				 * Kernel-hogged (GPS off until GPS bring-up):
+				 *   GPS EN (pin7):  gpiochip0 line 2  (output-low)
 				 */
-				pinctrl-names = "default";
-				pinctrl-0 = <&lora_mini_irq &lora_mini_busy &lora_mini_reset &lora_mini_rxen &lora_mini_pps>;
 				status = "okay";
 			};
 		};
 	};
 
-	fragment@3 {
+	fragment@4 {
 		target = <&i2c0>; /* i2c@ff040000 - Pi physical pins 3/5 */
 		__overlay__ {
 			status = "okay";

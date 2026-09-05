@@ -43,12 +43,19 @@ yaml (CS:8 IRQ:16 Busy:20 Reset:24 RXen:12) + Luckfox Zero W pinout
 | RESET | **24** | **18** | **RM_IO12** | **g0.12** |
 | RXEN | 12 | 32 | RM_IO30 | g1.26 |
 | GPS PPS | 17 | 11 | RM_IO3 | g0.3 |
+| GPS EN (off by default) | 4 | **7** | RM_IO2 | g0.2 hogged **low** |
 | I2C SDA/SCL | 2/3 | 3/5 | RM_IO0/1 | i2c0 |
 
 Userspace board profile: `radio_board = meshadv-mini` via
 `~/.reticulum/interfaces/sx126x_boards` (installer-shipped). With the Mini
 overlay, keep `pin_cs = -1` so spidev owns HW CS on RM_IO10 (same pattern as
 Pi Hat gold config with CS on pin40).
+
+**Boot-safe defaults (required):** RESET/RXEN/IRQ/BUSY/PPS pin groups are on
+`spi0` `pinctrl-0` (not a dummy root node — placeholders never bind, so those
+muxes stayed UNCLAIMED and a seated Mini could brown-out the board at boot).
+GPS EN pin7 is **gpio-hog output-low** (`meshadv-mini-gps-en`) for LoRa-first;
+enable GPS later with a dedicated profile / userspace, not this default.
 
 ## MeshAdv Pi Hat v1.1 pinout (default overlay)
 

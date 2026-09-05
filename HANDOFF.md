@@ -383,27 +383,68 @@ sudo password historically `Lyra1234`.
    #   radio_board = meshadv-mini
    #   pin_cs = -1
    # keep frequency/SF/etc. as needed; dio2/dio3 come from sx126x_boards
+   # /etc/lyra-hardware.conf must say hat=meshadv-mini (not wio-sx1262)
    sudo reboot
    ```
-3. After boot:
+3. After boot (bare first, then with HAT):
    ```bash
    lyra-hat-pinmux status
    # expect overlay lyra-zero-w-meshadv-mini, CS gpio0-10 / lora_mini
    ls -l /dev/spidev0.0 /dev/i2c-0
+   # GPS EN hogged low (LoRa-first):
+   sudo cat /sys/kernel/debug/gpio | grep meshadv-mini-gps-en   # out lo
+   # RESET/RXEN/IRQ/BUSY/PPS must be owned by ff120000.spi (not UNCLAIMED-only):
+   sudo cat /sys/kernel/debug/pinctrl/*/pinmux-pins | grep lora-mini
    dmesg | tail -50   # no spi/pinctrl errors
    ```
-4. Bring up Reticulum mesh / SX126x interface; confirm radio init (no BUSY hang,
+4. **HAT install procedure (power-sensitive):**
+   - Power off, seat Mini firmly (orientation), **antenna on SMA before power**.
+   - Use a solid **5V** supply (USB power bank / wall brick that holds 5V under load).
+   - Boot; if no SSH within ~2 min, remove HAT and boot bare to recover.
+5. Bring up Reticulum mesh / SX126x interface; confirm radio init (no BUSY hang,
    CS responds, TX/RX path). RXEN should be driven by hat-mod from profile.
-5. Optional GPS on Mini: EN pin7 / UART pins 8–10 / PPS pin11 — pinmux has PPS
-   as GPIO in; UART/GPSEN not claimed by mini overlay yet (add later if needed).
-6. If sticky overlay keeps flipping to pi-header: check `radio_board` and any
-   mesh `ensure` path still reading the old board name.
-7. When e2e works: rebuild gold image so new flashes get all three dtbos +
-   sx126x_boards; push this commit if still local-only; update live inventory
-   docs if desired.
-8. Do **not** run Mini pinmux on lyra1 while Pi Hat is attached.
+6. Optional GPS later: remove/disable pin7 `meshadv-mini-gps-en` hog (or add a
+   mini+gps profile), drive EN high, enable UART0 on pins 8/10 (RM_IO22/23).
+   PPS pin11 is already GPIO-in via SPI pinctrl.
+7. If sticky overlay keeps flipping to pi-header: check `radio_board`,
+   `/etc/lyra-hardware.conf`, and mesh `ensure`.
+8. When e2e works: rebuild gold image; **push** only when user asks.
+9. Do **not** run Mini pinmux on lyra1 while Pi Hat is attached.
+
+### Boot hang with Mini HAT (2026-09-05) — fixed in overlay
+
+**Symptom:** lyra2 boots fine bare with mini overlay. With MeshAdv Mini seated,
+board never reaches userspace (no SSH, no journal of the failed boot). Remove
+HAT → boots again. Overlay alone does not brick.
+
+**Root cause (software side):** `lora-mini-gpio-lines` used
+`compatible = "gpio-consumer-placeholder"` so **no driver bound** →
+`pinctrl-0` for RESET/RXEN/IRQ/BUSY/PPS never applied (MUX UNCLAIMED). Only
+SPI CS (gpio0-10) was claimed. Radio control lines floated; GPS EN (pin7)
+was undriven (Mini GPS is active-HIGH enable). Likely high boot current /
+brownout when HAT powered.
+
+**Fix in `lyra-zero-w-meshadv-mini.dts`:**
+1. Attach RESET/RXEN/IRQ/BUSY/PPS pin groups to **`spi0` `pinctrl-0`** so they
+   apply when SPI probes (safe defaults: RESET high, RXEN low, inputs for
+   IRQ/BUSY/PPS) **without** gpio-hog — hog would block SX126x libgpiod.
+2. **gpio-hog** pin7 GPS EN **output-low** (`meshadv-mini-gps-en`) for
+   LoRa-first bring-up.
+3. Keep docs-only placeholder node without relying on it for pinctrl.
+
+**Verified bare on lyra2 after fix:**
+- pinctrl-maps: all `lora-mini-*` groups (spi + irq/busy/reset/rxen/pps) on
+  `ff120000.spi`; i2c sda/scl on `ff040000.i2c`
+- `/sys/kernel/debug/gpio`: `gpio-2 |meshadv-mini-gps-en| out lo`;
+  `gpio-10 |spi0 CS0| out hi ACTIVE LOW`
+- pinmux-pins: gpio0-10/12/17 and gpio1-25/26 function `lora_mini`
+- `/dev/spidev0.0` + `/dev/i2c-0` up
+
+**Still possible hardware causes if hang persists with HAT:** weak 5V PSU,
+no antenna (RF damage risk more than boot hang), mis-seat/short, TMP102/I2C
+stuck (less likely than power). lyra1 (.108) never touched.
 
 ### Commit note
 
-Local commit on this branch documents the above; **do not push** until the
-user asks (requested 2026-09-01: commit + handoff only, radio e2e after hats).
+Local commits document Mini overlay + boot-hang gpio defaults; **do not push**
+until the user asks. Radio e2e still pending successful HAT boot + mesh init.

@@ -26,9 +26,13 @@ IMAGE_XZ="$WORK/armbian-lyra.img.xz"
 IMAGE_RAW="$WORK/armbian-lyra.img"
 MNT="$WORK/mnt"
 SSH_PUBKEY_FILE="${SSH_PUBKEY_FILE:-$HOME/.ssh/id_ed25519_minimax.pub}"
-# Optional KEYED U-Boot binary (MeshAdv Mini GPS-on-UART0 safe). Not git-tracked;
-# pass LYRA_KEYED_UBOOT=/path/to/u-boot-rockchip-keyed.bin or drop under files/.
-KEYED_UBOOT_BIN="${LYRA_KEYED_UBOOT:-$HERE/files/u-boot-rockchip-keyed.bin}"
+# KEYED U-Boot is MANDATORY (MeshAdv Mini GPS TX on pin10 aborts unkeyed autoboot).
+# Resolve order: LYRA_KEYED_UBOOT → files/u-boot-rockchip-keyed.bin → download from
+# GitHub release asset (SHA256 verified). Build exits if none available.
+KEYED_UBOOT_BIN="${LYRA_KEYED_UBOOT:-}"
+KEYED_UBOOT_DEFAULT="$HERE/files/u-boot-rockchip-keyed.bin"
+KEYED_UBOOT_SHA256="0016e6a9c2f68b5e68983950e2907e54999438b3850eaaa9a4cd68a40a4f1ff9"
+KEYED_UBOOT_URL="${LYRA_KEYED_UBOOT_URL:-https://github.com/joshbowyer/LoRaspbian-installer/releases/download/v1.1.0/u-boot-rockchip-keyed-2026.07.bin}"
 
 # WiFi baked into the image at build time (solves the chicken-and-egg problem:
 # a freshly flashed card has no way to reach it over SSH to run the on-device
@@ -82,15 +86,42 @@ echo "Decompressing to a fresh working copy..."
 rm -f "$IMAGE_RAW"
 xz -dc "$IMAGE_XZ" > "$IMAGE_RAW"
 
-# --- 1a. Optional KEYED U-Boot (bs=32k seek=1, same as platform_install.sh) ---
-if [ -f "$KEYED_UBOOT_BIN" ]; then
-    echo "Baking KEYED U-Boot from $KEYED_UBOOT_BIN ..."
-    dd if="$KEYED_UBOOT_BIN" of="$IMAGE_RAW" bs=32k seek=1 conv=notrunc status=none
-    echo "  KEYED U-Boot written (stop string: uboot)"
-else
-    echo "No KEYED U-Boot at $KEYED_UBOOT_BIN — stock Armbian U-Boot kept."
-    echo "  Mini HAT boards need post-flash KEYED (see u-boot/README.md)."
-fi
+# --- 1a. KEYED U-Boot (mandatory; bs=32k seek=1, same as platform_install.sh) ---
+# Without KEYED, MeshAdv Mini (GPS TX → pin10 = UART0 RX) aborts unkeyed autoboot
+# to => before Linux — solid red LED hang. Never ship stock U-Boot.
+resolve_keyed_uboot() {
+    local candidate sha
+    if [ -n "${KEYED_UBOOT_BIN}" ] && [ -f "${KEYED_UBOOT_BIN}" ]; then
+        candidate="$KEYED_UBOOT_BIN"
+    elif [ -f "$KEYED_UBOOT_DEFAULT" ]; then
+        candidate="$KEYED_UBOOT_DEFAULT"
+    else
+        echo "KEYED U-Boot missing at $KEYED_UBOOT_DEFAULT — downloading release asset..."
+        echo "  URL: $KEYED_UBOOT_URL"
+        mkdir -p "$(dirname "$KEYED_UBOOT_DEFAULT")"
+        if ! wget -q --show-progress "$KEYED_UBOOT_URL" -O "$KEYED_UBOOT_DEFAULT"; then
+            rm -f "$KEYED_UBOOT_DEFAULT"
+            echo "ERROR: failed to download KEYED U-Boot."
+            echo "  Place the binary at $KEYED_UBOOT_DEFAULT"
+            echo "  or set LYRA_KEYED_UBOOT=/path/to/u-boot-rockchip-keyed.bin"
+            echo "  Release: https://github.com/joshbowyer/LoRaspbian-installer/releases/tag/v1.1.0"
+            exit 1
+        fi
+        candidate="$KEYED_UBOOT_DEFAULT"
+    fi
+    sha=$(sha256sum "$candidate" | awk '{print $1}')
+    if [ "$sha" != "$KEYED_UBOOT_SHA256" ]; then
+        echo "ERROR: KEYED U-Boot SHA256 mismatch for $candidate"
+        echo "  expected: $KEYED_UBOOT_SHA256"
+        echo "  got:      $sha"
+        exit 1
+    fi
+    KEYED_UBOOT_BIN="$candidate"
+}
+resolve_keyed_uboot
+echo "Baking KEYED U-Boot from $KEYED_UBOOT_BIN ..."
+dd if="$KEYED_UBOOT_BIN" of="$IMAGE_RAW" bs=32k seek=1 conv=notrunc status=none
+echo "  KEYED U-Boot written (stop string: uboot; sha256 verified)"
 
 # --- 1b. Grow the image before mounting --------------------------------------
 # The stock Armbian minimal image ships with a tiny root partition (~1.6GB,

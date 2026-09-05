@@ -54,8 +54,10 @@ Linux/Armbian is up, console is **`ttyS2,115200n8`**.
 **MeshAdv Mini + LoRa (shipped):** pinmux CS24 / RST18 / RXEN32 is verified
 end-to-end on hardware (SX126x Up, LXMF over LoRa). Mini GPS TX sits on header
 pin 10 = Lyra UART0 RX (same pins vendor U-Boot uses as debug UART). Stock
-unkeyed autoboot aborts to `=>` on any RX noise — flash **KEYED U-Boot**
-(stop string `uboot`) on Mini boards; see [`u-boot/README.md`](u-boot/README.md).
+unkeyed autoboot aborts to `=>` on any RX noise. **Every gold build bakes
+KEYED U-Boot** (stop string `uboot`) — see [`u-boot/README.md`](u-boot/README.md).
+If a self-built card hangs solid-red with the Mini HAT, the image was built
+without KEYED; `dd` the keyed binary onto the SD (`bs=32k seek=1`) or rebuild.
 
 **Onboard GPS (MeshAdv Mini ATGM336H): deferred until mainline.** Vendor
 kernel 6.1.115 owns UART0 via Rockchip **fiq-debugger** (`/dev/ttyFIQ0`).
@@ -150,9 +152,9 @@ u-boot/                    # KEYED autoboot fragment + flash notes (Mini)
 
 - **Onboard Mini GPS** waits on mainline RK3506 (no FIQ dual-claim). See
   Hardware status above. USB GPS works today if needed.
-- KEYED U-Boot is verified on Mini boards. Gold builds bake it when
-  `files/u-boot-rockchip-keyed.bin` (or `LYRA_KEYED_UBOOT=`) is present;
-  the binary is also a release asset (see `u-boot/README.md`).
+- KEYED U-Boot is **mandatory** in gold builds (`files/u-boot-rockchip-keyed.bin`
+  is git-tracked; missing → download from release + SHA verify → else exit).
+  Override with `LYRA_KEYED_UBOOT=`. See `u-boot/README.md`.
 - `lyra:lyra` is the default login — wizard prompts to change it, not forced.
 - rngit install can still fail under qemu emulation; piwheels handles the
   common case.

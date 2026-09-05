@@ -40,8 +40,14 @@ Based on Armbian mainline for this board (2026-09):
   (not needed for Rockchip SPL image).
 
 Workspace used for first KEYED build: `/tmp/opencode/lyra-uboot-build/`.
-Binary kept gitignored under `client-setup/u-boot-rockchip-keyed.bin` on the
-build host (not pushed).
+
+**Shipped binary:** `files/u-boot-rockchip-keyed.bin` (git-tracked, ~8.7 MiB).
+
+| Field | Value |
+|---|---|
+| SHA256 | `0016e6a9c2f68b5e68983950e2907e54999438b3850eaaa9a4cd68a40a4f1ff9` |
+| Release asset | `u-boot-rockchip-keyed-2026.07.bin` on [v1.1.0](https://github.com/joshbowyer/LoRaspbian-installer/releases/tag/v1.1.0) |
+| Localversion | `2026.07-loraspbian-keyed` |
 
 ```bash
 # sketch — see HANDOFF § KEYED U-Boot for full env
@@ -52,22 +58,37 @@ make luckfox-lyra-zero-w-rk3506b_defconfig
 make -j$(nproc) DTC=$(which dtc) \
   ROCKCHIP_TPL=.../rk3506b_ddr_750MHz_v1.06.bin \
   TEE=.../rk3506_tee_v2.10.bin
-# → u-boot-rockchip.bin
+# → u-boot-rockchip.bin  (copy to files/u-boot-rockchip-keyed.bin + update SHA)
 ```
 
-## Install on a live board
+## Gold image bake (mandatory)
 
-**Same recipe as** `/usr/lib/u-boot/platform_install.sh`:
+`build-lyra-gold-image.sh` **always** writes KEYED into the image
+(`dd bs=32k seek=1`). Resolve order:
+
+1. `LYRA_KEYED_UBOOT=/path/to.bin` (override)
+2. `files/u-boot-rockchip-keyed.bin` (repo default)
+3. Download from GitHub release asset + SHA256 verify
+4. **Exit 1** if missing or hash mismatch — never silently keep stock U-Boot
+
+WiFi bake is independent (`LYRA_WIFI_SSID` / `LYRA_WIFI_PSK`).
+
+## Install / repair on a live board or already-flashed SD
+
+**Same recipe as** `/usr/lib/u-boot/platform_install.sh`. Use this to fix a
+self-built card that was made before KEYED became mandatory (solid red with
+Mini HAT seated):
 
 ```bash
+# On host, with SD as /dev/sdX (NOT partition):
+sudo dd if=files/u-boot-rockchip-keyed.bin of=/dev/sdX bs=32k seek=1 conv=notrunc
+sudo sync
+
+# Or on a live board that still boots hatless:
 # BACK UP first 16MiB of MMC, then:
 sudo dd if=u-boot-rockchip-keyed.bin of=/dev/mmcblk0 bs=32k seek=1 conv=notrunc
 sudo sync && sudo reboot
 ```
-
-**Never flash lyra1 (10.0.0.108)** while it carries the production MeshAdv Pi
-Hat path unless intentionally migrating that node. Test board: **lyra2
-(10.0.0.56)**.
 
 Restore stock from backup:
 
@@ -78,11 +99,5 @@ sudo dd if=uboot-backup-pre-keyed-16M.bin of=/dev/mmcblk0 bs=1M count=16 conv=no
 ## Serial rescue
 
 - Baud: **1500000** (U-Boot/SPL); Linux later **115200** on `ttyS2` (often
-  disabled in DT — prefer SSH).
+  disabled in DT — prefer SSH / FIQ console).
 - To enter U-Boot prompt: type **`uboot`** during the countdown (not any key).
-
-## Gold image bake (TODO)
-
-Future: rebuild `linux-u-boot-luckfox-lyra-zero-w-vendor` with this fragment
-and ship KEYED by default so MeshAdv Mini (and any GPS-on-UART0 hat) boots
-without a manual dd. Until then, flash KEYED on Mini boards after first boot.

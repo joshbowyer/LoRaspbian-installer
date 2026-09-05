@@ -6,4 +6,5 @@ work/
 # Build output
 out/
 client-setup/
-files/u-boot-rockchip-keyed.bin
+# KEYED U-Boot binary IS tracked under files/u-boot-rockchip-keyed.bin
+# (mandatory for MeshAdv Mini). Do not ignore it.

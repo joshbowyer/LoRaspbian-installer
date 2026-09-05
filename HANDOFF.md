@@ -538,3 +538,17 @@ is the interim option. KEYED U-Boot remains required for Mini HAT boot.
 
 LoRa-only Mini + KEYED docs + platforms JSON + spidev/gpiod + GPS-deferred
 mainline note. Push GitHub + rngit; gold image release.
+
+### KEYED mandatory in gold builds (post-v1.1.0)
+
+v1.1.0 release images bake KEYED, but self-builds previously **skipped** KEYED
+when `files/u-boot-rockchip-keyed.bin` was missing (gitignored) → Mini HAT
+solid-red hang (lyra4). Fix: binary is **git-tracked**; build script always
+bakes KEYED (SHA256 verify); download fallback from GH release asset; **exit 1**
+if unavailable. Repair already-flashed SD:
+
+```bash
+sudo dd if=files/u-boot-rockchip-keyed.bin of=/dev/sdX bs=32k seek=1 conv=notrunc
+```
+
+WiFi bake unchanged (`LYRA_WIFI_SSID` / `LYRA_WIFI_PSK`).

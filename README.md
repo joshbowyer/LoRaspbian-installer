@@ -51,11 +51,19 @@ Credit: Meshtastic WebUSB Rockchip erase flasher (VID).
 **Serial baud when debugging boot:** U-Boot/SPL often uses **1500000**; once
 Linux/Armbian is up, console is **`ttyS2,115200n8`**.
 
-**MeshAdv Mini + GPS:** Mini GPS TX is on header pin 10 = Lyra UART0 RX (same
-pins U-Boot uses as debug UART). Stock unkeyed autoboot aborts to `=>` on any
-RX noise. LoRaspbian KEYED U-Boot requires typing **`uboot`** to stop autoboot
-— see [`u-boot/README.md`](u-boot/README.md) and HANDOFF. Flash KEYED on Mini
-boards until it is baked into the gold image.
+**MeshAdv Mini + LoRa (shipped):** pinmux CS24 / RST18 / RXEN32 is verified
+end-to-end on hardware (SX126x Up, LXMF over LoRa). Mini GPS TX sits on header
+pin 10 = Lyra UART0 RX (same pins vendor U-Boot uses as debug UART). Stock
+unkeyed autoboot aborts to `=>` on any RX noise — flash **KEYED U-Boot**
+(stop string `uboot`) on Mini boards; see [`u-boot/README.md`](u-boot/README.md).
+
+**Onboard GPS (MeshAdv Mini ATGM336H): deferred until mainline.** Vendor
+kernel 6.1.115 owns UART0 via Rockchip **fiq-debugger** (`/dev/ttyFIQ0`).
+DT overlays that disable FIQ and/or enable `&uart0` brick-hang boot (solid
+red LED). GPS support will land once we switch this board to **mainline
+Linux** after RK3506 device-tree and related patches are fully merged
+upstream. Until then: ship **LoRa-only** for Mini (GPS EN held low); use a
+USB GPS if you need location now.
 
 **CLI fallback** (if you prefer not to use the browser tool): install
 `rkdeveloptool` or Luckfox `upgrade_tool`, put the board in Loader mode the
@@ -107,15 +115,16 @@ base image every time, instead of hand-configuring a live board over SSH.
 | Component | Status |
 |---|---|
 | WiFi (aic8800 chip, rfkill soft-block, netplan) | Hardware-verified, working |
-| SPI0 remapped to the Pi's header pinout | **Hardware-verified live on the board** - `/dev/spidev0.0` confirmed working |
-| IRQ/BUSY/RESET GPIO lines | Hardware-verified (pinmux confirmed correct) |
-| End-to-end LoRa radio through a HAT | **Not yet tested** - written in anticipation of a HAT design in progress, not yet physically tested with a radio attached |
-| rngit / RRC chat | Known Rust/cbor2 build issue under emulation - has a workaround (piwheels), not fully hardened |
+| SPI0 remapped to the Pi's header pinout | **Hardware-verified** — `/dev/spidev0.0` working |
+| MeshAdv **Pi Hat** v1.1 (CS40 RST12) | **Hardware-verified** — SX126x Up, mesh traffic |
+| MeshAdv **Mini** LoRa (CS24 RST18 RXEN32) | **Hardware-verified** — KEYED U-Boot + SX126x Up + LXMF 1-hop LoRa |
+| Station G3 pinmux overlay | Shipped; needs live HAT confirmation |
+| MeshAdv Mini **onboard GPS** (UART0 / ATGM336H) | **Deferred** — blocked on vendor FIQ debugger; lands with **mainline** RK3506 once patches are fully merged |
+| RX LED on Mini (D8 “LoRa RX”) | Hard-tied to **RXEN** (schematic) — solid red while continuous RX is expected, not packet blink |
+| rngit / RRC chat | Known Rust/cbor2 build issue under emulation — piwheels workaround |
 
-See `dts-overlay/README.md` for the full pinmux derivation, including the
-real bugs found by testing live on hardware (not just theory) - `cs-gpios`
-requirements, devicetree node-nesting quirks, etc. - useful context if
-something doesn't work on a different Lyra revision or a different HAT.
+See `dts-overlay/README.md` for pinmux derivation and live-hardware gotchas
+(`cs-gpios`, ConfigObj JSON for `sx126x_platforms`, Mini vs Pi Hat CS/RST).
 
 ## Repo layout
 
@@ -123,20 +132,27 @@ something doesn't work on a different Lyra revision or a different HAT.
 build-lyra-gold-image.sh   # the main build script (run this)
 files/                     # payloads copied into the image during build
   reticulum-config-base    # base RNS config, includes the SX126x LoRa interface
-  sx126x_platforms         # GPIO/SPI pin mapping for this board (driver profile overlay)
-  first-boot-wizard.sh     # on-device first-boot setup (WiFi fallback, mode/board select)
-  *.service                # systemd units for nomadnet/rngit/first-boot
-dts-overlay/                # devicetree overlay remapping the 40-pin header
-  lyra-zero-w-pi-header.dts      # the overlay itself (compiled + applied by the build script)
-  README.md                      # full derivation + hardware-tested gotchas
-  dump-lyra-pinctrl.sh           # helper to inspect a board's live pinctrl state
+  sx126x_platforms         # GPIO/SPI pin map (quoted JSON + /dev/gpiochip paths)
+  sx126x_boards            # MeshAdv Mini board profile (cs24 …)
+  first-boot-wizard.sh     # WiFi / Reticulum|Meshtastic / HAT select
+  lyra-hat-pinmux          # apply one HAT overlay to armbianEnv.txt
+  *.service                # nomadnet/rngit/rrcd/rnsh/telemetry/retibbs/mesh
+dts-overlay/               # HAT pinmux overlays (mutually exclusive)
+  lyra-zero-w-pi-header.dts           # MeshAdv Pi Hat v1.1 (default)
+  lyra-zero-w-meshadv-mini.dts        # MeshAdv Mini LoRa-only (shipped)
+  lyra-zero-w-meshadv-mini-gps.dts    # experimental only — do not use on vendor kernel
+  lyra-zero-w-station-g3.dts
+  README.md
+u-boot/                    # KEYED autoboot fragment + flash notes (Mini)
 ```
 
 ## Known gaps / next steps
 
-- LoRa radio behavior through an actual HAT hasn't been tested (pinmux/SPI
-  bus is verified independent of any specific radio module).
-- `lyra:lyra` is the default login - the first-boot wizard prompts to change
-  it, but it's not force-changed.
-- rngit install can still fail under qemu emulation in some environments;
-  the piwheels workaround in the build script handles the common case.
+- **Onboard Mini GPS** waits on mainline RK3506 (no FIQ dual-claim). See
+  Hardware status above. USB GPS works today if needed.
+- KEYED U-Boot is documented and verified on Mini boards; bake into the
+  gold image image still optional until the binary is shipped in-tree or
+  via release assets (see `u-boot/README.md`).
+- `lyra:lyra` is the default login — wizard prompts to change it, not forced.
+- rngit install can still fail under qemu emulation; piwheels handles the
+  common case.

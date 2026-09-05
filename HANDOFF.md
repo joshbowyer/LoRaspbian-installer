@@ -510,8 +510,31 @@ while lyra1 is on air (LoRa path alive; formal LXMF e2e still next).
 
 **Do not “simplify” the platforms JSON** back to unquoted braces.
 
-### Commit note
+### LXMF path e2e (2026-09-05) — WORKING over LoRa
 
-Local commits: Mini overlay + KEYED U-Boot docs + platforms/spidev bake;
-**do not push** until the user asks. Next: LXMF path test lyra2↔lyra1 over
-LoRa; GPS later; KEYED bake into gold only after e2e 100%.
+- lyra2 → lyra1 LXMF / rnsh: **1 hop** `SX126xInterface[MeshAdv LoRa]`
+- lyra1 → lyra2 LXMF + NomadNet node: **1 hop** MeshAdv LoRa
+- lyra2 ids (example): NomadNet `48c5712a…`, LXMF `8f0a6f5a…`, node `bc06f566…`
+
+### RX LED solid red (not a bug)
+
+MeshAdv Mini schematic: D8 “LoRa RX” MOSFET gate is hard-tied to net **RXEN**
+(module pin6 + header pin32). Continuous RX keeps RXEN high → solid red while
+listening. Not independently blinkable in software. TX LED is module TXEN only.
+
+### GPS path closed on vendor kernel (2026-09-05)
+
+| Attempt | Result |
+|---|---|
+| `&uart0` okay only | brick hang (even hatless) |
+| `&fiq_debugger` disabled only | brick hang |
+| fiq off + uart0 + GPS EN high | brick hang |
+
+Ship **LoRa-only** Mini. Onboard GPS deferred until **mainline** RK3506 DT
+(no FIQ on UART0). Documented in README + `dts-overlay/README.md`. USB GPS
+is the interim option. KEYED U-Boot remains required for Mini HAT boot.
+
+### Ship note (v1.1.0)
+
+LoRa-only Mini + KEYED docs + platforms JSON + spidev/gpiod + GPS-deferred
+mainline note. Push GitHub + rngit; gold image release.

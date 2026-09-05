@@ -1,0 +1,170 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * MeshAdv Mini + onboard GPS (ATGM336H) for Luckfox Lyra Zero W.
+ *
+ * Same LoRa pinmux as lyra-zero-w-meshadv-mini.dts, plus:
+ *   - GPS EN pin7 hogged HIGH (active high per MeshAdv Mini README)
+ *   - &uart0 (serial@ff0a0000) enabled on pins 8/10 for NMEA @ 9600
+ *   - /fiq-debugger DISABLED (it owns UART0 via rockchip,serial-id=<0>;
+ *     enabling &uart0 without this dual-claims the port and brick-hangs
+ *     boot even hatless — 2026-09-05 lyra2)
+ *
+ * Tradeoff: no /dev/ttyFIQ0 serial console while this overlay is active
+ * (SSH still works). U-Boot still uses UART0 pre-kernel — requires
+ * AUTOBOOT_KEYED U-Boot when the Mini HAT is seated (GPS TX on pin10).
+ *
+ * STATUS (2026-09-05): DO NOT USE on vendor 6.1.115. fiq-off alone, uart0
+ * alone, and fiq-off+uart0 all brick-hang boot (solid red). Kept as reference
+ * only. Onboard GPS deferred until mainline RK3506 (no FIQ on UART0).
+ *
+ * MUTUALLY EXCLUSIVE with pi-header, station-g3, and the LoRa-only Mini
+ * overlay. EXPERIMENTAL: lyra-hat-pinmux profile meshadv-mini-gps only
+ * (NOT wizard default — fiq-off+uart0 still hung lyra2 2026-09-05).
+ * Wizard Mini path uses LoRa-only (gps=off). Opt-in: gps=on or apply
+ * meshadv-mini-gps after bring-up is fixed.
+ *
+ * NEVER claim pin12 as RESET (Mini Fan PWM).
+ */
+
+/ {
+	fragment@0 {
+		target = <&pinctrl>;
+		__overlay__ {
+			lora_mini {
+				lora_mini_spi0_mosi: lora-mini-spi0-mosi {
+					rockchip,pins = <0x00 0x06 0x53 &pcfg_pull_none_drv_level_3>; /* pin19 MOSI */
+				};
+				lora_mini_spi0_miso: lora-mini-spi0-miso {
+					rockchip,pins = <0x00 0x07 0x54 &pcfg_pull_none_drv_level_3>; /* pin21 MISO */
+				};
+				lora_mini_spi0_clk: lora-mini-spi0-clk {
+					rockchip,pins = <0x00 0x08 0x52 &pcfg_pull_none_drv_level_3>; /* pin23 SCLK */
+				};
+				lora_mini_spi0_cs0: lora-mini-spi0-cs0 {
+					/* pin24 CSN0 (RM_IO10 / GPIO0_B2) */
+					rockchip,pins = <0x00 0x0a 0x55 &pcfg_pull_none_drv_level_3>;
+				};
+
+				lora_mini_irq: lora-mini-irq {
+					rockchip,pins = <0x01 0x19 0x00 &pcfg_pull_down>; /* pin36 */
+				};
+
+				lora_mini_busy: lora-mini-busy {
+					rockchip,pins = <0x00 0x11 0x00 &pcfg_pull_none>; /* pin38 */
+				};
+
+				lora_mini_reset: lora-mini-reset {
+					/* pin18 RESET — NEVER pin12 (fan) */
+					rockchip,pins = <0x00 0x0c 0x00 &pcfg_output_high>;
+				};
+
+				lora_mini_rxen: lora-mini-rxen {
+					rockchip,pins = <0x01 0x1a 0x00 &pcfg_output_low>; /* pin32 */
+				};
+
+				lora_mini_pps: lora-mini-pps {
+					rockchip,pins = <0x00 0x03 0x00 &pcfg_pull_none>; /* pin11 PPS */
+				};
+
+				lora_mini_gps_en: lora-mini-gps-en {
+					/* pin7 GPS EN active HIGH — powered on with this overlay */
+					rockchip,pins = <0x00 0x02 0x00 &pcfg_output_high>;
+				};
+
+				lora_mini_i2c0_sda: lora-mini-i2c0-sda {
+					rockchip,pins = <0x00 0x00 0x1f &pcfg_pull_none>;
+				};
+				lora_mini_i2c0_scl: lora-mini-i2c0-scl {
+					rockchip,pins = <0x00 0x01 0x1e &pcfg_pull_none>;
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <
+				&lora_mini_spi0_mosi &lora_mini_spi0_miso
+				&lora_mini_spi0_clk &lora_mini_spi0_cs0
+				&lora_mini_irq &lora_mini_busy
+				&lora_mini_reset &lora_mini_rxen &lora_mini_pps
+			>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			cs-gpios = <&gpio0 0x0a 0x01>;
+
+			lora@0 {
+				compatible = "rockchip,spidev";
+				reg = <0x00>;
+				spi-max-frequency = <8000000>;
+				status = "okay";
+			};
+		};
+	};
+
+	/* GPS EN hog HIGH — ATGM336H powered for NMEA on UART0. */
+	fragment@2 {
+		target = <&gpio0>;
+		__overlay__ {
+			meshadv_mini_gps_en_hog {
+				gpio-hog;
+				gpios = <0x02 0x00>; /* GPIO0_A2 / RM_IO2 / phys pin7 */
+				output-high;
+				line-name = "meshadv-mini-gps-en";
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/";
+		__overlay__ {
+			lora-mini-gpio-lines {
+				compatible = "gpio-consumer-placeholder";
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@4 {
+		target = <&i2c0>;
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&lora_mini_i2c0_sda &lora_mini_i2c0_scl>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			clock-frequency = <100000>;
+		};
+	};
+
+	/*
+	 * Free UART0 from Rockchip FIQ debugger BEFORE enabling the 8250 port.
+	 * Base DT: fiq-debugger rockchip,serial-id = <0> (= UART0 @ 1.5M).
+	 * Without this, &uart0 status=okay dual-claims HW and hangs boot.
+	 */
+	fragment@5 {
+		target = <&fiq_debugger>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	/*
+	 * GPS NMEA: host RX = pin10 (GPS TX), host TX = pin8 (GPS RX).
+	 * Base node already has pinctrl-0 → uart0_xfer_pins (RM_IO22/23).
+	 * Baud is userspace (stty 9600 / gpsd); keep kernel console OFF uart0.
+	 */
+	fragment@6 {
+		target = <&uart0>;
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart0_xfer_pins>;
+		};
+	};
+};

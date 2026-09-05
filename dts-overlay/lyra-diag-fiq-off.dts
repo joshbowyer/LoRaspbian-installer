@@ -1,0 +1,24 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * DIAGNOSTIC ONLY — disable Rockchip fiq-debugger (UART0 console).
+ *
+ * RESULT (2026-09-05 lyra2 vendor 6.1.115): this overlay ALONE brick-hangs
+ * boot (solid red LED), even hatless. Do not use. Kept as evidence that
+ * FIQ cannot be released via DT on this vendor kernel.
+ *
+ * Onboard Mini GPS deferred until mainline RK3506 (no FIQ on UART0).
+ *
+ * lyra-hat-pinmux strips this name on normal apply (not a HAT profile).
+ * Manual armbianEnv edit only — recovery = remove from user_overlays.
+ */
+
+/ {
+	fragment@0 {
+		target = <&fiq_debugger>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};

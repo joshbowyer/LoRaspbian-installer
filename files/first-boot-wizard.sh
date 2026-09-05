@@ -134,6 +134,10 @@ apply_hat_choice() {
     echo "board=lyra-zero-w" > /etc/lyra-hardware.conf
     echo "hat=$choice"        >> /etc/lyra-hardware.conf
     echo "radio_board=$choice" >> /etc/lyra-hardware.conf
+    # Mini wizard default is LoRa-only (gps=off). GPS dtbo is experimental
+    # and hung lyra2 even with fiq-debugger disabled (2026-09-05) — do not
+    # auto-inject. Opt-in later: gps=on + lyra-hat-pinmux apply meshadv-mini-gps.
+    echo "gps=off" >> /etc/lyra-hardware.conf
 
     # Update /home/lyra/.reticulum/config's [[SX126xInterface]] radio_board
     # line if present (preserving pin_cs=-1 and any other keys - sed updates
@@ -146,6 +150,7 @@ apply_hat_choice() {
     # Apply the pinmux overlay switch (writes /boot/armbianEnv.txt and sets
     # a reboot-required flag). Must be root - the wizard is invoked
     # interactively from a root shell (sudo lyra-setup), so this is fine.
+    # meshadv-mini → lyra-zero-w-meshadv-mini.dtbo (LoRa-only; FIQ kept).
     local pinmux_ran=0
     if [ -x /usr/local/sbin/lyra-hat-pinmux ]; then
         if /usr/local/sbin/lyra-hat-pinmux apply "$pinmux_profile"; then
@@ -154,12 +159,31 @@ apply_hat_choice() {
     fi
 
     if [ "$pinmux_ran" -eq 1 ]; then
-        dialog --clear --backtitle "Lyra first-boot setup" --title "Reboot required" --msgbox "\
-Pinmux overlay updated to ${choice}. The LoRa radio will not be wired correctly\n\
+        local msg
+        msg="Pinmux overlay updated to ${choice}. The LoRa radio will not be wired correctly\n\
 until you REBOOT, even though the rest of this wizard is finishing now.\n\
 \n\
-Reboot now (or manually) before relying on LoRa — wrong overlay can drive\n\
-RESET onto Mini fan PWM (pin12) or flip pin16 direction on G3 vs Pi Hat." 12 70
+Reboot before relying on LoRa — wrong overlay can drive RESET onto Mini fan\n\
+PWM (pin12) or flip pin16 direction on G3 vs Pi Hat."
+        case "$choice" in
+            meshadv-mini|meshadv_mini)
+                dialog --msgbox "\
+MeshAdv Mini: LoRa-only overlay (GPS EN off, FIQ serial console kept).\n\
+Onboard GPS is deferred until mainline RK3506 (vendor FIQ owns UART0).\n\
+Flash KEYED U-Boot (stop string 'uboot') so Mini HAT noise on pin10\n\
+cannot abort autoboot — see /usr/share/doc or installer u-boot/README." 12 70 2>&1 >/dev/tty || true
+                ;;
+        esac
+        dialog --clear --backtitle "Lyra first-boot setup" --title "Reboot required" \
+            --msgbox "$msg" 16 72
+        clear
+        if dialog --yesno "Reboot now so the new HAT overlay takes effect?" 8 60 2>&1 >/dev/tty; then
+            clear
+            echo "Rebooting to apply pinmux overlay..."
+            sleep 1
+            systemctl reboot || reboot
+            # If reboot returns (shouldn't), continue wizard after operator cancels.
+        fi
         clear
     fi
 
@@ -188,7 +212,7 @@ if [ "$MODE" = "reticulum" ]; then
     HAT=$(dialog --clear --menu "Select LoRa HAT:" \
         16 78 3 \
         "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (CS40 RST12, optional GPS PPS pin16)" \
-        "meshadv-mini"        "MeshAdv Mini (CS24 RST18 RXEN32, GPS PPS pin11 — NOT pin12)" \
+        "meshadv-mini"        "MeshAdv Mini LoRa (CS24 RST18; GPS experimental later)" \
         "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN — different overlay)" \
         3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear
@@ -253,7 +277,7 @@ elif [ "$MODE" = "meshtastic" ]; then
     HAT=$(dialog --clear --menu "Select LoRa HAT (Meshtastic mode):" \
         16 78 3 \
         "meshadv-pi-hat-v1.1" "MeshAdv Pi HAT v1.1 (CS40 RST12, optional GPS PPS pin16)" \
-        "meshadv-mini"        "MeshAdv Mini (CS24 RST18 RXEN32, GPS PPS pin11 — NOT pin12)" \
+        "meshadv-mini"        "MeshAdv Mini LoRa (CS24 RST18; GPS experimental later)" \
         "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN — different overlay)" \
         3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear

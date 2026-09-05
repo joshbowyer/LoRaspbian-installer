@@ -379,12 +379,15 @@ fi
 # lines + user I2C (pins 3/5). See dts-overlay/README.md. Compiled on HOST
 # (dtc is arch-independent).
 #
-# THREE mutually exclusive overlays — load exactly one via lyra-hat-pinmux:
-#   lyra-zero-w-pi-header      MeshAdv Pi Hat v1.1 (CS40 RST12 PPS16) DEFAULT
-#   lyra-zero-w-meshadv-mini   MeshAdv Mini (CS24 RST18 RXEN32 PPS11)
-#   lyra-zero-w-station-g3     Station G3 (pin16 = RXEN out)
+# Mutually exclusive HAT overlays — load exactly one via lyra-hat-pinmux:
+#   lyra-zero-w-pi-header           MeshAdv Pi Hat v1.1 (CS40 RST12 PPS16) DEFAULT
+#   lyra-zero-w-meshadv-mini        MeshAdv Mini LoRa-only (wizard default for Mini)
+#   lyra-zero-w-meshadv-mini-gps    MeshAdv Mini + GPS EXPERIMENTAL (not auto)
+#   lyra-zero-w-station-g3          Station G3 (pin16 = RXEN out)
+# Optional diagnostic (stackable): lyra-diag-fiq-off
 # Mini MUST NOT use pi-header: that drives pin12 as RESET; on Mini pin12 is
-# Fan PWM.
+# Fan PWM. Mini+GPS disables fiq-debugger and enables uart0 (pins 8/10) —
+# still hangs on lyra2 as of 2026-09-05; ship dtbo but do not wizard-default.
 echo "Compiling and installing the Pi-compatible header pinmux overlays (SPI0 + I2C + HAT control)..."
 if ! command -v dtc >/dev/null 2>&1; then
     echo "WARNING: dtc (device-tree-compiler) not found on host - skipping header overlays. Install with: sudo apt-get install -y device-tree-compiler"
@@ -395,11 +398,21 @@ else
         -o "$WORK/lyra-zero-w-pi-header.dtbo" \
         "$HERE/dts-overlay/lyra-zero-w-pi-header.dts"
     cp "$WORK/lyra-zero-w-pi-header.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-pi-header.dtbo"
-    # MeshAdv Mini (CS pin24 / RST pin18 / RXEN pin32 / PPS pin11).
+    # MeshAdv Mini LoRa-only (GPS EN low; keep FIQ console) — Mini wizard default.
     dtc -@ -I dts -O dtb \
         -o "$WORK/lyra-zero-w-meshadv-mini.dtbo" \
         "$HERE/dts-overlay/lyra-zero-w-meshadv-mini.dts"
     cp "$WORK/lyra-zero-w-meshadv-mini.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-meshadv-mini.dtbo"
+    # MeshAdv Mini + GPS EXPERIMENTAL: fiq off + uart0 + GPS EN high.
+    dtc -@ -I dts -O dtb \
+        -o "$WORK/lyra-zero-w-meshadv-mini-gps.dtbo" \
+        "$HERE/dts-overlay/lyra-zero-w-meshadv-mini-gps.dts"
+    cp "$WORK/lyra-zero-w-meshadv-mini-gps.dtbo" "$MNT/boot/overlay-user/lyra-zero-w-meshadv-mini-gps.dtbo"
+    # Diagnostic: fiq-debugger off only (stack with Mini LoRa for GPS A/B tests).
+    dtc -@ -I dts -O dtb \
+        -o "$WORK/lyra-diag-fiq-off.dtbo" \
+        "$HERE/dts-overlay/lyra-diag-fiq-off.dts"
+    cp "$WORK/lyra-diag-fiq-off.dtbo" "$MNT/boot/overlay-user/lyra-diag-fiq-off.dtbo"
     # Station G3 (pin16 = RXEN OUTPUT, active-low, default HIGH).
     dtc -@ -I dts -O dtb \
         -o "$WORK/lyra-zero-w-station-g3.dtbo" \

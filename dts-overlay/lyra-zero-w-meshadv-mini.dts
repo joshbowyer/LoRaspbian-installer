@@ -86,9 +86,11 @@
 
 				lora_mini_gps_en: lora-mini-gps-en {
 					/* pin7 GPS EN (BCM4 / RM_IO2 / GPIO0_A2). MeshAdv Mini
-					 * enables GPS with gpio=4=op,dh (active HIGH). Default
-					 * LOW keeps GPS powered off for LoRa-first bring-up so
-					 * boot current stays within Lyra 3.3V/5V budget. */
+					 * enables GPS with gpio=4=op,dh (active HIGH).
+					 * Default LOW (GPS off) until bring-up is complete.
+					 * Do NOT enable &uart0 in this overlay — enabling
+					 * serial@ff0a0000 brick-hangs boot even hatless on
+					 * lyra2 (2026-09-05). GPS NMEA path is deferred. */
 					rockchip,pins = <0x00 0x02 0x00 &pcfg_output_low>;
 				};
 
@@ -144,17 +146,22 @@
 	};
 
 	/*
-	 * GPS EN is NOT needed by the LoRa userspace driver. Hog it low so the
-	 * pin stays driven even if something else rebinds SPI pinctrl later.
-	 * Enable GPS later by removing this hog (or a future "mini+gps" profile)
-	 * and driving pin7 high from userspace / a GPS overlay.
+	 * GPS EN: MeshAdv Mini README uses gpio=4=op,dh (active HIGH) to power
+	 * the ATGM336H. Keep hogged LOW by default (LoRa-first). KEYED U-Boot is
+	 * still required before ever driving EN high — GPS TX rides pin10/UART0 RX.
+	 *
+	 * DO NOT add a fragment enabling &uart0 / serial@ff0a0000 here.
+	 * Enabling uart0 in this overlay brick-hangs boot on lyra2 even with the
+	 * HAT removed (solid red user LED, no userspace). Root cause TBD; GPS
+	 * NMEA will use a safer path later (userspace after boot, or separate
+	 * optional overlay tested hatless first).
 	 */
 	fragment@2 {
 		target = <&gpio0>;
 		__overlay__ {
 			meshadv_mini_gps_en_hog {
 				gpio-hog;
-				gpios = <0x02 0x00>; /* GPIO0_A2 / RM_IO2 / phys pin7, ACTIVE_HIGH */
+				gpios = <0x02 0x00>; /* GPIO0_A2 / RM_IO2 / phys pin7 */
 				output-low;
 				line-name = "meshadv-mini-gps-en";
 			};
@@ -173,8 +180,10 @@
 				 *   RESET (pin18): gpiochip0 line 12
 				 *   RXEN  (pin32): gpiochip1 line 26
 				 *   PPS   (pin11): gpiochip0 line 3
-				 * Kernel-hogged (GPS off until GPS bring-up):
-				 *   GPS EN (pin7):  gpiochip0 line 2  (output-low)
+				 * Kernel-hogged:
+				 *   GPS EN (pin7):  gpiochip0 line 2  (output-low / GPS off)
+				 * GPS UART deferred — do NOT enable &uart0 here (brick-hang
+				 * on lyra2 2026-09-05 even hatless). pin8/10 = UART0 later.
 				 */
 				status = "okay";
 			};

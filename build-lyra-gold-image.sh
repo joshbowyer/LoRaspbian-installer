@@ -150,8 +150,12 @@ chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get purge -y -qq nano 2>/
 # --- 5. User + SSH ------------------------------------------------------------
 echo "Creating lyra user..."
 # spi + gpio groups: /dev/spidev* and /dev/gpiochip* are root:spi / root:gpio mode 660
+# Stock Armbian minimal may not ship these groups — create before useradd
+# (useradd -G fails hard if any named group is missing; set -e would abort).
+chroot_run "getent group spi >/dev/null || groupadd --system spi"
+chroot_run "getent group gpio >/dev/null || groupadd --system gpio"
 chroot_run "id -u lyra >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,dialout,plugdev,netdev,spi,gpio lyra"
-chroot_run "usermod -aG spi,gpio,dialout lyra 2>/dev/null || true"
+chroot_run "usermod -aG sudo,dialout,plugdev,netdev,spi,gpio lyra 2>/dev/null || true"
 chroot_run "echo 'lyra:lyra' | chpasswd"
 mkdir -p "$MNT/home/lyra/.ssh"
 if [ -f "$SSH_PUBKEY_FILE" ]; then

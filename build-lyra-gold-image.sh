@@ -119,12 +119,16 @@ chroot_run() {
 # --- 4. Base packages --------------------------------------------------------
 echo "Installing base packages..."
 chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq"
-chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev git i2c-tools dialog whiptail rustc cargo vim"
+# python3-spidev + python3-libgpiod required by SX126xInterface (MeshAdv HATs).
+# Without them the mesh stack starts but LoRa stays offline with a clear error.
+chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev git i2c-tools dialog whiptail rustc cargo vim python3-spidev python3-libgpiod gpiod"
 chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get purge -y -qq nano 2>/dev/null || true"
 
 # --- 5. User + SSH ------------------------------------------------------------
 echo "Creating lyra user..."
-chroot_run "id -u lyra >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,dialout,plugdev,netdev lyra"
+# spi + gpio groups: /dev/spidev* and /dev/gpiochip* are root:spi / root:gpio mode 660
+chroot_run "id -u lyra >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,dialout,plugdev,netdev,spi,gpio lyra"
+chroot_run "usermod -aG spi,gpio,dialout lyra 2>/dev/null || true"
 chroot_run "echo 'lyra:lyra' | chpasswd"
 mkdir -p "$MNT/home/lyra/.ssh"
 if [ -f "$SSH_PUBKEY_FILE" ]; then

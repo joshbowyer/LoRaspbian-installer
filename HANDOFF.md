@@ -481,10 +481,37 @@ Same `bs=32k seek=1` as `/usr/lib/u-boot/platform_install.sh`.
 kernel 6.1.115-vendor-rockchip, `user_overlays=lyra-zero-w-meshadv-mini`,
 `radio_board=meshadv-mini`, `hat=meshadv-mini`.
 
-**Next (user):** seat Mini + **antenna** + solid 5V, power on. Expect boot past
-U-Boot into Linux/SSH. Then LoRa e2e. GPS later (enable pin7, UART0 8/10).
+**Verified 2026-09-05 (HAT seated):** KEYED U-Boot + Mini HAT boots to SSH.
+TMP102 @ I2C 0x48 proves HAT present. GPS still EN-hogged LOW (LoRa-first).
+
+### LoRa SX126x bring-up on lyra2 (2026-09-05) — WORKING
+
+**Status:** `SX126xInterface[MeshAdv LoRa] Status: Up` on lyra2 with
+`radio_board=meshadv-mini`, `pin_cs=-1`, overlay `lyra-zero-w-meshadv-mini`.
+Params match lyra1 (915e6 / BW125k / SF7 / CR5 / tx22). RX counters climb
+while lyra1 is on air (LoRa path alive; formal LXMF e2e still next).
+
+**Three blockers fixed live on lyra2 (also baked into installer):**
+
+1. **`files/sx126x_platforms` ConfigObj format** — `header_pin_to_line` MUST
+   be a **single-quoted JSON string** with **full `/dev/gpiochipN` paths**.
+   Unquoted `{...}` is split on commas → driver rejects overlay → platform
+   `luckfox-lyra-zero-w` never loads → only bundled `luckfox-pico` /
+   `raspberry-pi`. lyra1 already had the correct quoted form; installer had
+   drifted to bare `gpiochip0` + unquoted JSON. Includes pin **24** (Mini CS).
+
+2. **Missing Python deps** — gold image lacked `python3-spidev` and
+   `python3-libgpiod`. Installed on lyra2 via apt; build script now installs
+   both (+ `gpiod` CLI). lyra1 had them via earlier manual/pip path.
+
+3. **`lyra` not in `spi`/`gpio` groups** — `/dev/spidev0.0` and
+   `/dev/gpiochip*` are root:spi / root:gpio mode 660. `usermod -aG spi,gpio
+   lyra` on lyra2; build script adds those groups at user creation.
+
+**Do not “simplify” the platforms JSON** back to unquoted braces.
 
 ### Commit note
 
-Local commits: Mini overlay + KEYED U-Boot docs/fragment; **do not push** until
-the user asks. Radio e2e still pending successful HAT boot after KEYED U-Boot.
+Local commits: Mini overlay + KEYED U-Boot docs + platforms/spidev bake;
+**do not push** until the user asks. Next: LXMF path test lyra2↔lyra1 over
+LoRa; GPS later; KEYED bake into gold only after e2e 100%.

@@ -3,52 +3,46 @@
 # Loaded automatically by SX126xInterface.py from
 # ~/.reticulum/interfaces/sx126x_platforms (this file gets copied there by
 # build-lyra-gold-image.sh). Adds a new "platform" alongside the driver's
-# bundled raspberry-pi / luckfox-pico profiles, so the existing
-# "meshadv-pi-hat-v1.1" radio_board profile (physical pins 12/32/33/36/38/40)
-# can be used unmodified on this board.
+# bundled raspberry-pi / luckfox-pico profiles.
 #
-# header_pin_to_line values were derived from a live device-tree dump of the
-# actual board (dtc -I fs -O dts /proc/device-tree) cross-referenced against
-# the official Luckfox pinout diagram - see
-# lyra-gold-image/dts-overlay/README.md for the full derivation. Physical pin
-# -> (gpiochip, line) mapping:
-#   11 (Station G3 TXEN/PA_EN) -> gpiochip0 line 3   (GPIO0_A3 / RM_IO3)
-#   12 (RESET)                 -> gpiochip0 line 14  (GPIO0_B6 / RM_IO14)
-#   15 (Station G3 IRQ/DIO1)   -> gpiochip0 line 5   (GPIO0_A5 / RM_IO5)
-#   16 (Station G3 RXEN/LNA_EN)-> gpiochip0 line 13  (GPIO0_B5 / RM_IO13)
-#   18 (Station G3 BUSY)       -> gpiochip0 line 12  (GPIO0_B4 / RM_IO12)
-#   32 (RXEN)  -> gpiochip1 line 26  (GPIO1_D2 / RM_IO30, chip pin 58, bank1 offset 58-32=26)
-#   33 (TXEN)  -> gpiochip1 line 18  (GPIO1_C2 / RM_IO27, chip pin 50, bank1 offset 50-32=18)
-#   36 (IRQ)   -> gpiochip1 line 25  (GPIO1_D1 / RM_IO29, chip pin 57, bank1 offset 57-32=25)
-#   38 (BUSY)  -> gpiochip0 line 17  (GPIO0_C1 / RM_IO17)
-#   24 (CS MeshAdv Mini / Station G3 NSS) -> gpiochip0 line 10
-#                 (GPIO0_B2 / RM_IO10 — HW SPI0 CSN0 on mini overlay;
-#                 bit-bang path still maps here for station-g3-style CS)
-#   40 (CS)    -> gpiochip0 line 18  (GPIO0_C2 / RM_IO18 - bit-banged CS via
-#                 cs-gpios in the devicetree overlay, same approach the
-#                 bundled raspberry-pi profile uses for the MeshAdv HAT)
+# CRITICAL ConfigObj format rules (do not "simplify"):
+#   1. header_pin_to_line MUST be a single-quoted JSON *string*. Unquoted
+#      braces/commas make ConfigObj split the value into a list and the
+#      driver rejects it ("must be a JSON object string").
+#   2. gpiochip paths MUST be full /dev/gpiochipN paths. Bare "gpiochip0"
+#      fails on Debian Trixie libgpiod 2.x with FileNotFoundError.
 #
-# Pins 11/15/16/18 added for the "station-g3" radio_board profile
-# (reticulum-hat-mod, BQ/Uniteng Station G3 RPi-Zero-2W-daughterboard path).
-# RM_IO3/5/12/13 confirmed via live devicetree: each RM_IO's bank/offset is
-# fixed regardless of which peripheral function it's routed to (cross-checked
-# across 2 different function nodes per RM_IO, e.g. rm-io3-spi0-clk and
-# rm-io3-i2c0-sda both show bank=0x00 offset=0x03) - so RM_IOn = gpiochip0
-# line n for all four of these low-numbered RM_IOs. NOTE this pattern does
-# NOT hold universally (RM_IO29 above maps to gpiochip1 line 25, not
-# gpiochip0 line 29) - it happened to hold for these 4 specific indices,
-# verified directly rather than assumed.
+# Physical pin -> (gpiochip, line) mapping (Luckfox Lyra Zero W):
+#   11  PPS / Station-G3 TXEN  -> /dev/gpiochip0 line 3   (RM_IO3)
+#   12  Pi-Hat RESET           -> /dev/gpiochip0 line 14  (RM_IO14)
+#   15  Station-G3 IRQ         -> /dev/gpiochip0 line 5   (RM_IO5)
+#   16  Station-G3 RXEN / PPS  -> /dev/gpiochip0 line 13  (RM_IO13)
+#   18  Mini RESET / G3 BUSY   -> /dev/gpiochip0 line 12  (RM_IO12)
+#   24  Mini / G3 CS (NSS)     -> /dev/gpiochip0 line 10  (RM_IO10, SPI0 CSN0)
+#   32  RXEN                   -> /dev/gpiochip1 line 26  (RM_IO30)
+#   33  TXEN                   -> /dev/gpiochip1 line 18  (RM_IO27)
+#   36  IRQ                    -> /dev/gpiochip1 line 25  (RM_IO29)
+#   38  BUSY                   -> /dev/gpiochip0 line 17  (RM_IO17)
+#   40  Pi-Hat CS              -> /dev/gpiochip0 line 18  (RM_IO18)
 #
-# NOT yet physically verified with a HAT attached (no LoRa HAT for this board
-# existed at time of writing) - the pin/GPIO mapping IS hardware-verified
-# (SPI0 + GPIO lines confirmed live via dtoverlay testing), but end-to-end
-# radio behavior through either the meshadv-pi-hat-v1.1 or station-g3
-# profile has not been tested yet.
+# radio_board profiles (sx126x_boards / bundled):
+#   meshadv-pi-hat-v1.1  CS40 RST12 IRQ36 BUSY38 RXEN32 TXEN33
+#   meshadv-mini         CS24 RST18 IRQ36 BUSY38 RXEN32 (no TXEN; DIO2 RF switch)
+#   station-g3           CS24 + pins 11/15/16/18 as above
+#
+# Overlay pairing:
+#   meshadv-pi-hat-v1.1 -> lyra-zero-w-pi-header.dtbo
+#   meshadv-mini        -> lyra-zero-w-meshadv-mini.dtbo
+#   station-g3          -> lyra-zero-w-station-g3.dtbo
+#
+# Verified: lyra1 (.108) Pi Hat SX126x Up with this quoted-JSON format.
+# Mini pin 24 added for MeshAdv Mini on lyra2.
 
 [platforms]
   [[luckfox-lyra-zero-w]]
     platform_name = luckfox-lyra-zero-w
     platform_version = 1
-    gpiochip = gpiochip0
+    notes = "Luckfox Lyra Zero W (RK3506B). 40-pin header pinmux via dtoverlay. Use full /dev gpiochip paths (libgpiod 2.x). header_pin_to_line is a quoted JSON string so ConfigObj does not split on commas."
+    gpiochip = /dev/gpiochip0
     spi_bus_default = 0
-    header_pin_to_line = {"11": ["gpiochip0", 3], "12": ["gpiochip0", 14], "15": ["gpiochip0", 5], "16": ["gpiochip0", 13], "18": ["gpiochip0", 12], "24": ["gpiochip0", 10], "32": ["gpiochip1", 26], "33": ["gpiochip1", 18], "36": ["gpiochip1", 25], "38": ["gpiochip0", 17], "40": ["gpiochip0", 18]}
+    header_pin_to_line = '{"11": ["/dev/gpiochip0", 3], "12": ["/dev/gpiochip0", 14], "15": ["/dev/gpiochip0", 5], "16": ["/dev/gpiochip0", 13], "18": ["/dev/gpiochip0", 12], "24": ["/dev/gpiochip0", 10], "32": ["/dev/gpiochip1", 26], "33": ["/dev/gpiochip1", 18], "36": ["/dev/gpiochip1", 25], "38": ["/dev/gpiochip0", 17], "40": ["/dev/gpiochip0", 18]}'

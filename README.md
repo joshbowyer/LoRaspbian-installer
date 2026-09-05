@@ -51,6 +51,12 @@ Credit: Meshtastic WebUSB Rockchip erase flasher (VID).
 **Serial baud when debugging boot:** U-Boot/SPL often uses **1500000**; once
 Linux/Armbian is up, console is **`ttyS2,115200n8`**.
 
+**MeshAdv Mini + GPS:** Mini GPS TX is on header pin 10 = Lyra UART0 RX (same
+pins U-Boot uses as debug UART). Stock unkeyed autoboot aborts to `=>` on any
+RX noise. LoRaspbian KEYED U-Boot requires typing **`uboot`** to stop autoboot
+— see [`u-boot/README.md`](u-boot/README.md) and HANDOFF. Flash KEYED on Mini
+boards until it is baked into the gold image.
+
 **CLI fallback** (if you prefer not to use the browser tool): install
 `rkdeveloptool` or Luckfox `upgrade_tool`, put the board in Loader mode the
 same way, download an RK3506 `MiniLoaderAll.bin` from the Luckfox SDK, then

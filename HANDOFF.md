@@ -59,9 +59,12 @@ dts-overlay/
   lyra-zero-w-pi-spi0-lora.dts.template  # stale, kept only as historical reference - ignore
   README.md                # full pin-mapping derivation + every real bug found testing live
   dump-lyra-pinctrl.sh     # run on a live board over SSH to dump its pinctrl state
+u-boot/
+  autoboot-keyed.fragment  # CONFIG_AUTOBOOT_KEYED + stop str "uboot" (Mini GPS on UART0)
+  README.md                # build/flash/restore KEYED U-Boot; serial rescue
 README.md                  # public-facing project README
 HANDOFF.md                 # this file
-.gitignore                 # excludes work/ (build workspace) and out/ (build output)
+.gitignore                 # excludes work/ out/ and client-setup/ (local bins/scripts)
 ```
 
 ## 3. Hardware status — what's actually verified vs. not
@@ -411,40 +414,77 @@ sudo password historically `Lyra1234`.
 8. When e2e works: rebuild gold image; **push** only when user asks.
 9. Do **not** run Mini pinmux on lyra1 while Pi Hat is attached.
 
-### Boot hang with Mini HAT (2026-09-05) — fixed in overlay
+### Boot hang with Mini HAT (2026-09-05) — REAL root cause is U-Boot
 
-**Symptom:** lyra2 boots fine bare with mini overlay. With MeshAdv Mini seated,
-board never reaches userspace (no SSH, no journal of the failed boot). Remove
-HAT → boots again. Overlay alone does not brick.
+**Symptom:** lyra2 boots fine bare with mini overlay. With MeshAdv Mini seated:
+solid red user LED, never reaches userspace (no SSH, no journal). Remove HAT
+→ boots again. Overlay alone does not brick. Physical reseat + high-watt PD
+PSU did not help.
 
-**Root cause (software side):** `lora-mini-gpio-lines` used
-`compatible = "gpio-consumer-placeholder"` so **no driver bound** →
-`pinctrl-0` for RESET/RXEN/IRQ/BUSY/PPS never applied (MUX UNCLAIMED). Only
-SPI CS (gpio0-10) was claimed. Radio control lines floated; GPS EN (pin7)
-was undriven (Mini GPS is active-HIGH enable). Likely high boot current /
-brownout when HAT powered.
+**Root cause (~85%, confirmed defconfig + Mini pinout): U-Boot autoboot abort**
 
-**Fix in `lyra-zero-w-meshadv-mini.dts`:**
-1. Attach RESET/RXEN/IRQ/BUSY/PPS pin groups to **`spi0` `pinctrl-0`** so they
-   apply when SPI probes (safe defaults: RESET high, RXEN low, inputs for
-   IRQ/BUSY/PPS) **without** gpio-hog — hog would block SX126x libgpiod.
-2. **gpio-hog** pin7 GPS EN **output-low** (`meshadv-mini-gps-en`) for
-   LoRa-first bring-up.
-3. Keep docs-only placeholder node without relying on it for pinctrl.
+| Fact | Detail |
+|---|---|
+| Mini GPS TX | header **pin 10** (and RX on pin 8) |
+| Lyra pin 8/10 | **UART0** = RM_IO22/23 |
+| Vendor U-Boot | `CONFIG_DEBUG_UART_BASE=0xFF0A0000` (UART0), baud **1500000** |
+| Autoboot | `CONFIG_BOOTDELAY=1`, **`# CONFIG_AUTOBOOT_KEYED is not set`** |
+| Effect | Any RX noise/break on pin 10 aborts countdown → stuck at `=>` |
+| Why solid red | Power OK; Linux never starts (no heartbeat) |
+| Why Pi Zero 2W “works” | Pi firmware does not treat 8/10 as unkeyed “any key cancel boot” |
+| Why overlay cannot fix | DTS runs **after** U-Boot |
 
-**Verified bare on lyra2 after fix:**
-- pinctrl-maps: all `lora-mini-*` groups (spi + irq/busy/reset/rxen/pps) on
-  `ff120000.spi`; i2c sda/scl on `ff040000.i2c`
-- `/sys/kernel/debug/gpio`: `gpio-2 |meshadv-mini-gps-en| out lo`;
-  `gpio-10 |spi0 CS0| out hi ACTIVE LOW`
-- pinmux-pins: gpio0-10/12/17 and gpio1-25/26 function `lora_mini`
-- `/dev/spidev0.0` + `/dev/i2c-0` up
+lyra1 + MeshAdv **Pi Hat** works because that hat typically has **no GPS on 8/10**.
 
-**Still possible hardware causes if hang persists with HAT:** weak 5V PSU,
-no antenna (RF damage risk more than boot hang), mis-seat/short, TMP102/I2C
-stuck (less likely than power). lyra1 (.108) never touched.
+**Overlay hardening still valid (not the hang fix):** commit `34fea9a` moved
+RESET/RXEN/IRQ/BUSY/PPS onto `spi0` pinctrl and hogged GPS EN pin7 LOW for
+LoRa-first. Keep it; it is good practice, not the boot-past-U-Boot fix.
+
+### KEYED U-Boot (2026-09-05) — installed on lyra2
+
+**Config fragment** (see `u-boot/autoboot-keyed.fragment` + `u-boot/README.md`):
+
+```
+CONFIG_BOOTDELAY=1
+CONFIG_AUTOBOOT_KEYED=y
+CONFIG_AUTOBOOT_FLUSH_STDIN=y
+CONFIG_AUTOBOOT_PROMPT="Hit 'uboot' to stop autoboot: %d\n"
+CONFIG_AUTOBOOT_STOP_STR="uboot"
+CONFIG_LOCALVERSION="-loraspbian-keyed"
+```
+
+Serial rescue: type **`uboot`** (not any key) during countdown @ **1500000** baud.
+
+**Built:** U-Boot `2026.07-loraspbian-keyed` (Armbian tag v2026.07 +
+`v2026.07-rk3506` patches, TPL `rk3506b_ddr_750MHz_v1.06.bin`, TEE
+`rk3506_tee_v2.10.bin`). Host build tree:
+`/tmp/opencode/lyra-uboot-build/` (not in git). Artifact on lyra2:
+`/home/lyra/u-boot-rockchip-keyed.bin` (sha256
+`0016e6a9c2f68b5e68983950e2907e54999438b3850eaaa9a4cd68a40a4f1ff9`).
+
+**Flash recipe (lyra2 ONLY — never lyra1):**
+
+```bash
+# on board after scp of u-boot-rockchip.bin
+sudo dd if=/home/lyra/uboot-backup-pre-keyed-16M.bin of=/dev/mmcblk0 bs=1M count=16  # restore if needed
+sudo dd if=/home/lyra/u-boot-rockchip-keyed.bin of=/dev/mmcblk0 bs=32k seek=1 conv=notrunc
+sudo sync && sudo reboot
+```
+
+Same `bs=32k seek=1` as `/usr/lib/u-boot/platform_install.sh`.
+
+**Backups on lyra2:**
+- `/home/lyra/uboot-backup-16M.bin` (stock, sha256 `61b8c43c…`)
+- `/home/lyra/uboot-backup-pre-keyed-16M.bin` (pre-flash snapshot, same stock hash)
+
+**Verified 2026-09-05:** lyra2 **hatless** reboot after KEYED flash → SSH OK,
+kernel 6.1.115-vendor-rockchip, `user_overlays=lyra-zero-w-meshadv-mini`,
+`radio_board=meshadv-mini`, `hat=meshadv-mini`.
+
+**Next (user):** seat Mini + **antenna** + solid 5V, power on. Expect boot past
+U-Boot into Linux/SSH. Then LoRa e2e. GPS later (enable pin7, UART0 8/10).
 
 ### Commit note
 
-Local commits document Mini overlay + boot-hang gpio defaults; **do not push**
-until the user asks. Radio e2e still pending successful HAT boot + mesh init.
+Local commits: Mini overlay + KEYED U-Boot docs/fragment; **do not push** until
+the user asks. Radio e2e still pending successful HAT boot after KEYED U-Boot.

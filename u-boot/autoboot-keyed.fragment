@@ -1,0 +1,13 @@
+# LoRaspbian: require stop-string to interrupt autoboot (not any UART noise).
+# Needed for MeshAdv Mini: GPS TX lands on Lyra header pin 10 = UART0 RX, which
+# is also vendor U-Boot's DEBUG_UART. Without KEYED, GPS/noise aborts boot to =>.
+#
+# Merge into luckfox-lyra-zero-w-rk3506b_defconfig (or board .config) before build.
+# Serial console for U-Boot remains 1500000 on UART0; type "uboot" to stop.
+
+CONFIG_BOOTDELAY=1
+CONFIG_AUTOBOOT_KEYED=y
+CONFIG_AUTOBOOT_FLUSH_STDIN=y
+CONFIG_AUTOBOOT_PROMPT="Hit 'uboot' to stop autoboot: %d\n"
+CONFIG_AUTOBOOT_STOP_STR="uboot"
+CONFIG_LOCALVERSION="-loraspbian-keyed"

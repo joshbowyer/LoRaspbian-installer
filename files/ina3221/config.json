@@ -1,0 +1,25 @@
+{
+  "bus": 0,
+  "address": "0x40",
+  "shunt_ohms": [
+    0.1,
+    0.1,
+    0.1
+  ],
+  "labels": [
+    "solar",
+    "bat",
+    "system"
+  ],
+  "cache_path": "/home/lyra/.cache/ina3221.json",
+  "display_name": "lyra",
+  "collector": "da424e0f47657d7575df58a2b83b111b",
+  "rnsconfig": "/home/lyra/.reticulum",
+  "identity_path": "/home/lyra/.ina3221/identity",
+  "lxmf_storage": "/home/lyra/.ina3221/lxmf_storage",
+  "announce_interval_s": 600,
+  "send_timeout_s": 90,
+  "tmp102_address": "0x48",
+  "read_env_sensors": true,
+  "bme280_address": "0x77"
+}

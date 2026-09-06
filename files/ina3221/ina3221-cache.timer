@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh INA3221 MOTD cache every minute
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=ina3221-cache.service
+
+[Install]
+WantedBy=timers.target

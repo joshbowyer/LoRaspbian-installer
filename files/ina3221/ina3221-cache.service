@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh INA3221 MOTD cache
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=lyra
+Group=lyra
+ExecStart=/usr/bin/python3 /home/lyra/ina3221/read_ina3221.py -c /home/lyra/ina3221/config.json --cache --motd

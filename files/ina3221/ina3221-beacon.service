@@ -1,0 +1,13 @@
+[Unit]
+Description=INA3221 LXMF telemetry beacon (oneshot)
+After=network.target reticulum-mesh.service
+Wants=reticulum-mesh.service
+
+[Service]
+Type=oneshot
+User=lyra
+Group=lyra
+WorkingDirectory=/home/lyra/ina3221
+ExecStart=/usr/bin/python3 /home/lyra/ina3221/ina3221-beacon.py -c /home/lyra/ina3221/config.json
+Nice=10
+# shared RNS instance via rngit/mesh — do not start rnsd here

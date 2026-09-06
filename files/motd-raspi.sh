@@ -227,6 +227,58 @@ _kv "Memory"    "$_MEM"      "$_CORAL"
 _kv "Disk"      "$_DISK"     "$_CORAL"
 _kv "Sessions"  "$_USERS user(s) logged in" "$_BLUE"
 
+# INA3221 power + env sensors (optional) — cache by ina3221-cache.timer
+# BME/BMP preferred ambient (temp_c); TMP102 is onboard hat local-only.
+_INA_CACHE="${HOME}/.cache/ina3221.json"
+if [ -r "$_INA_CACHE" ]; then
+  _INA_AGE=$(( $(date +%s) - $(stat -c %Y "$_INA_CACHE" 2>/dev/null || echo 0) ))
+  _INA_PARSE="$(python3 - "$_INA_CACHE" 2>/dev/null <<'PY'
+import json, sys
+p = sys.argv[1]
+try:
+    d = json.load(open(p))
+except Exception:
+    sys.exit(0)
+if not d.get("ok"):
+    sys.exit(0)
+parts = []
+for ch in d.get("channels") or []:
+    lab = str(ch.get("label", "?"))[:8]
+    v = float(ch.get("v", 0))
+    ma = float(ch.get("ma", 0))
+    parts.append(f"{lab}:{v:.2f}V/{ma:.0f}mA")
+if parts:
+    print("POWER|" + "  ".join(parts))
+env_bits = []
+if d.get("temp_c") is not None:
+    src = d.get("temp_source") or "env"
+    env_bits.append(f"{float(d['temp_c']):.1f}C")
+    if d.get("humidity_pct") is not None:
+        env_bits.append(f"{float(d['humidity_pct']):.0f}%RH")
+    if d.get("pressure_mbar") is not None:
+        env_bits.append(f"{float(d['pressure_mbar']):.0f}mb")
+    env_bits.append(f"({src})")
+    print("ENV|" + " ".join(env_bits))
+if d.get("tmp102_c") is not None:
+    print(f"HAT|{float(d['tmp102_c']):.1f}C TMP102")
+PY
+)"
+  _INA_NOTE=""
+  [ "$_INA_AGE" -gt 300 ] 2>/dev/null && _INA_NOTE=" ${_D}(stale)${_R}${_CORAL}"
+  _INA_POWER="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^POWER|//p' | head -1)"
+  _INA_ENV="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^ENV|//p' | head -1)"
+  _INA_HAT="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^HAT|//p' | head -1)"
+  if [ -n "$_INA_POWER" ]; then
+    _kv "Power" "$_INA_POWER$_INA_NOTE" "$_GREEN"
+  fi
+  if [ -n "$_INA_ENV" ]; then
+    _kv "Env" "$_INA_ENV$_INA_NOTE" "$_GOLD"
+  fi
+  if [ -n "$_INA_HAT" ]; then
+    _kv "Hat Temp" "$_INA_HAT$_INA_NOTE" "$_GOLD"
+  fi
+fi
+
 printf '%s%s║%s  %s%-10s%s %s%s%s\n' \
   "$_CYAN" "$_B" "$_R" "$_WHITE" "Last Login" "$_R" "$_D$_PINK" "$_LASTLOG" "$_R"
 printf '%s%s%s%s\n' "$_CYAN" "$_B" "$_MID" "$_R"
@@ -270,7 +322,8 @@ unset _R _B _D _CYAN _CYAN2 _MAG _BLUE _GREEN _GOLD _CORAL _RED _GREY _WHITE _PI
       _ra _na _ma _RNGIT_STATE _NOMADNET_STATE _MESHTASTICD_STATE _LORA_STATE _TCP_STATE \
       _RNSTATUS_BIN _RNSTATUS_OUT \
       _RNGIT_CHIP _NOMADNET_CHIP _LORA_CHIP _MESHTASTICD_CHIP _TCP_CHIP _TOP _MID _BOT \
-      _rm _MESH_SVC_STATE _MESH_SVC_COLOR
+      _rm _MESH_SVC_STATE _MESH_SVC_COLOR \
+      _INA_CACHE _INA_AGE _INA_PARSE _INA_POWER _INA_ENV _INA_HAT _INA_NOTE
 unset -f _iface_state _chip _kv _row 2>/dev/null
 
 # ─────────────────────────────────────────────────────────────────────────────

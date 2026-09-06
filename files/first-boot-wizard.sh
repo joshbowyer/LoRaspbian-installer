@@ -127,12 +127,17 @@ MODE=$(dialog --clear --backtitle "Lyra first-boot setup" \
     3>&1 1>&2 2>&3) || MODE=reticulum
 clear
 
+# Set when pinmux overlay changes; reboot is offered at END of wizard
+# (after rnsh allowlist etc), not immediately after HAT select.
+REBOOT_NEEDED=0
+
 # Apply the chosen HAT (writes lyra-hardware.conf, updates RNS config if
 # needed, and runs lyra-hat-pinmux apply to switch /boot/armbianEnv.txt's
 # user_overlays). $1 is the chosen HAT key (e.g. "meshadv-pi-hat-v1.1" or
 # "station-g3"); $2 is the RNS radio_board name to write (same key in
 # practice); $3 is the pinmux-overlay profile name to apply
 # ("meshadv", "meshadv-mini", or "station-g3"). Echoes the chosen radio_board name.
+# On pinmux change: informational msgbox only (no reboot prompt here).
 apply_hat_choice() {
     local choice="$1"          # wizard key, used as radio_board
     local rns_rb="$2"          # alias for radio_board line (same here)
@@ -172,16 +177,17 @@ apply_hat_choice() {
     fi
 
     if [ "$pinmux_ran" -eq 1 ]; then
-        # One combined msgbox (all dialogs MUST use 2>&1 >/dev/tty or the
-        # UI never reaches the SSH/console TTY and the wizard appears hung).
+        REBOOT_NEEDED=1
+        # Info only — actual reboot prompt is at end of wizard (after rnsh).
+        # All dialogs MUST use 2>&1 >/dev/tty or UI never reaches SSH TTY.
         local msg
         msg="Pinmux overlay updated to ${choice}.\n\
 \n\
-The LoRa radio will not be wired correctly until you REBOOT, even if the\n\
-rest of this wizard finishes first.\n\
+You will need to REBOOT for LoRa pinmux to take effect, even after you\n\
+finish the rest of this wizard (rnsh allowlist, password, etc).\n\
 \n\
-Reboot before relying on LoRa — wrong overlay can drive RESET onto Mini fan\n\
-PWM (pin12) or flip pin16 direction on G3 vs Pi Hat."
+Do not rely on LoRa until after reboot — wrong overlay can drive RESET onto\n\
+Mini fan PWM (pin12) or flip pin16 direction on G3 vs Pi Hat."
         case "$choice" in
             meshadv-mini|meshadv_mini)
                 msg="MeshAdv Mini: LoRa-only overlay applied (GPS EN off; FIQ serial console kept).\n\
@@ -193,16 +199,8 @@ abort autoboot — see installer u-boot/README.\n\
 ${msg}"
                 ;;
         esac
-        dialog --clear --backtitle "Lyra first-boot setup" --title "Reboot required" \
+        dialog --clear --backtitle "Lyra first-boot setup" --title "Reboot needed (later)" \
             --msgbox "$msg" 18 74 2>&1 >/dev/tty || true
-        clear
-        if dialog --yesno "Reboot now so the new HAT overlay takes effect?" 8 60 2>&1 >/dev/tty; then
-            clear
-            echo "Rebooting to apply pinmux overlay..."
-            sleep 1
-            systemctl reboot || reboot
-            # If reboot returns (shouldn't), continue wizard after operator cancels.
-        fi
         clear
     fi
 
@@ -313,3 +311,17 @@ echo "Setup complete. This wizard won't run again (remove $MARKER_WIZARD + reboo
 echo ""
 echo "=== Default login is lyra:lyra - please set your own password now. ==="
 passwd lyra || echo "Password change skipped/failed - run 'sudo passwd lyra' later."
+
+# Reboot last: after HAT notice → rnsh allowlist → password.
+if [ "${REBOOT_NEEDED:-0}" -eq 1 ]; then
+    clear
+    if dialog --yesno "HAT pinmux was updated. Reboot now so the LoRa overlay takes effect?" 8 64 2>&1 >/dev/tty; then
+        clear
+        echo "Rebooting to apply pinmux overlay..."
+        sleep 1
+        systemctl reboot || reboot
+    else
+        clear
+        echo "Remember to reboot before relying on LoRa (overlay not active until then)."
+    fi
+fi

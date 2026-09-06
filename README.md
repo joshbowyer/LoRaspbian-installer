@@ -78,6 +78,17 @@ LXMF telemetry. Optional hardware on I2C0 (pins 3/5):
   `config.json` `display_name` / `collector` / channel labels after first boot)
 - Manual: `python3 ~/ina3221/read_ina3221.py`
 
+**rnsh over LoRa:** character-mode PTY is painful at SF7 (~5.5 kbps). Upstream
+already has line-interactive mode (`~` then `L` after newline). For a
+**non-forking** default, apply the idempotent patch in
+[`files/rnsh-line-mode/`](files/rnsh-line-mode/) on the **client** (initiator):
+
+```bash
+python3 files/rnsh-line-mode/apply-rnsh-line-mode.py
+rnsh -L <dest>                 # or: export RNSH_LINE_MODE=1
+# re-run after pip install -U rns (upgrades wipe site-packages patches)
+```
+
 **CLI fallback** (if you prefer not to use the browser tool): install
 `rkdeveloptool` or Luckfox `upgrade_tool`, put the board in Loader mode the
 same way, download an RK3506 `MiniLoaderAll.bin` from the Luckfox SDK, then

@@ -113,7 +113,7 @@ following for unattended field nodes:\n\
 \n\
 This can be reversed manually later (re-enable WiFi with 'rfkill unblock\n\
 wifi' and 'sudo systemctl unmask serial-getty@ttyS2.service') if you need\n\
-local access again." 20 74
+local access again." 20 74 2>&1 >/dev/tty || true
     clear
 fi
 
@@ -172,23 +172,29 @@ apply_hat_choice() {
     fi
 
     if [ "$pinmux_ran" -eq 1 ]; then
+        # One combined msgbox (all dialogs MUST use 2>&1 >/dev/tty or the
+        # UI never reaches the SSH/console TTY and the wizard appears hung).
         local msg
-        msg="Pinmux overlay updated to ${choice}. The LoRa radio will not be wired correctly\n\
-until you REBOOT, even though the rest of this wizard is finishing now.\n\
+        msg="Pinmux overlay updated to ${choice}.\n\
+\n\
+The LoRa radio will not be wired correctly until you REBOOT, even if the\n\
+rest of this wizard finishes first.\n\
 \n\
 Reboot before relying on LoRa — wrong overlay can drive RESET onto Mini fan\n\
 PWM (pin12) or flip pin16 direction on G3 vs Pi Hat."
         case "$choice" in
             meshadv-mini|meshadv_mini)
-                dialog --msgbox "\
-MeshAdv Mini: LoRa-only overlay (GPS EN off, FIQ serial console kept).\n\
+                msg="MeshAdv Mini: LoRa-only overlay applied (GPS EN off; FIQ serial console kept).\n\
+\n\
 Onboard GPS is deferred until mainline RK3506 (vendor FIQ owns UART0).\n\
-Flash KEYED U-Boot (stop string 'uboot') so Mini HAT noise on pin10\n\
-cannot abort autoboot — see /usr/share/doc or installer u-boot/README." 12 70 2>&1 >/dev/tty || true
+Flash KEYED U-Boot (stop string 'uboot') so Mini HAT noise on pin10 cannot\n\
+abort autoboot — see installer u-boot/README.\n\
+\n\
+${msg}"
                 ;;
         esac
         dialog --clear --backtitle "Lyra first-boot setup" --title "Reboot required" \
-            --msgbox "$msg" 16 72
+            --msgbox "$msg" 18 74 2>&1 >/dev/tty || true
         clear
         if dialog --yesno "Reboot now so the new HAT overlay takes effect?" 8 60 2>&1 >/dev/tty; then
             clear
@@ -277,7 +283,7 @@ if [ "$MODE" = "reticulum" ]; then
     done
     if [ -n "$RNSH_HASH" ]; then
         dialog --clear --backtitle "Lyra first-boot setup" --title "rnsh remote shell address" \
-            --msgbox "This node's rnsh destination hash is:\n\n  $RNSH_HASH\n\nUse this to connect from an allowed client:\n  rnsh $RNSH_HASH\n\nManage who can connect by editing:\n  /home/lyra/.rnsh/allowed_identities" 14 70
+            --msgbox "This node's rnsh destination hash is:\n\n  $RNSH_HASH\n\nUse this to connect from an allowed client:\n  rnsh $RNSH_HASH\n\nManage who can connect by editing:\n  /home/lyra/.rnsh/allowed_identities" 14 70 2>&1 >/dev/tty || true
         clear
     else
         echo "NOTE: could not read the rnsh destination hash yet - check later with:"

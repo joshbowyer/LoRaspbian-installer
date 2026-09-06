@@ -67,6 +67,17 @@ Linux** after RK3506 device-tree and related patches are fully merged
 upstream. Until then: ship **LoRa-only** for Mini (GPS EN held low); use a
 USB GPS if you need location now.
 
+**I2C sensors (baked):** `/home/lyra/ina3221/` + timers for local MOTD and
+LXMF telemetry. Optional hardware on I2C0 (pins 3/5):
+- **INA3221** @ `0x40` — power rails (default labels `solar` / `bat` / `system`)
+- **TMP102** @ `0x48` — MeshAdv Mini onboard hat temp (MOTD only)
+- **BME280/BMP280** @ `0x76`/`0x77` — ambient temp/humidity/pressure → collector
+  (BME temp supersedes TMP102 for LXMF). Absent chips are skipped.
+- Cache timer (1 min) → `~/.cache/ina3221.json` → login MOTD Power/Env lines
+- Beacon timer (10 min) → The Spot collector `da424e0f…` (edit
+  `config.json` `display_name` / `collector` / channel labels after first boot)
+- Manual: `python3 ~/ina3221/read_ina3221.py`
+
 **CLI fallback** (if you prefer not to use the browser tool): install
 `rkdeveloptool` or Luckfox `upgrade_tool`, put the board in Loader mode the
 same way, download an RK3506 `MiniLoaderAll.bin` from the Luckfox SDK, then
@@ -123,6 +134,7 @@ base image every time, instead of hand-configuring a live board over SSH.
 | Station G3 pinmux overlay | Shipped; needs live HAT confirmation |
 | MeshAdv Mini **onboard GPS** (UART0 / ATGM336H) | **Deferred** — blocked on vendor FIQ debugger; lands with **mainline** RK3506 once patches are fully merged |
 | RX LED on Mini (D8 “LoRa RX”) | Hard-tied to **RXEN** (schematic) — solid red while continuous RX is expected, not packet blink |
+| INA3221 @0x40 + TMP102 @0x48 + BME280 @0x77 | **Baked** — MOTD cache + LXMF beacon timers; verified on lyra3 solar |
 | rngit / RRC chat | Known Rust/cbor2 build issue under emulation — piwheels workaround |
 
 See `dts-overlay/README.md` for pinmux derivation and live-hardware gotchas
@@ -138,6 +150,7 @@ files/                     # payloads copied into the image during build
   sx126x_boards            # MeshAdv Mini board profile (cs24 …)
   first-boot-wizard.sh     # WiFi / Reticulum|Meshtastic / HAT select
   lyra-hat-pinmux          # apply one HAT overlay to armbianEnv.txt
+  ina3221/                 # power + env sensors (MOTD + LXMF beacon)
   *.service                # nomadnet/rngit/rrcd/rnsh/telemetry/retibbs/mesh
 dts-overlay/               # HAT pinmux overlays (mutually exclusive)
   lyra-zero-w-pi-header.dts           # MeshAdv Pi Hat v1.1 (default)

@@ -175,7 +175,8 @@ echo "Installing base packages..."
 chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq"
 # python3-spidev + python3-libgpiod required by SX126xInterface (MeshAdv HATs).
 # Without them the mesh stack starts but LoRa stays offline with a clear error.
-chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev git i2c-tools dialog whiptail rustc cargo vim python3-spidev python3-libgpiod gpiod"
+# python3-smbus: INA3221 / TMP102 / BME280 userspace readers (files/ina3221).
+chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get install -y -qq python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev git i2c-tools python3-smbus dialog whiptail rustc cargo vim python3-spidev python3-libgpiod gpiod"
 chroot_run "export DEBIAN_FRONTEND=noninteractive; apt-get purge -y -qq nano 2>/dev/null || true"
 
 # --- 5. User + SSH ------------------------------------------------------------
@@ -185,8 +186,10 @@ echo "Creating lyra user..."
 # (useradd -G fails hard if any named group is missing; set -e would abort).
 chroot_run "getent group spi >/dev/null || groupadd --system spi"
 chroot_run "getent group gpio >/dev/null || groupadd --system gpio"
-chroot_run "id -u lyra >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,dialout,plugdev,netdev,spi,gpio lyra"
-chroot_run "usermod -aG sudo,dialout,plugdev,netdev,spi,gpio lyra 2>/dev/null || true"
+# i2c: /dev/i2c-* is typically root:i2c 660 — needed for INA3221/TMP102/BME as lyra
+chroot_run "getent group i2c >/dev/null || groupadd --system i2c"
+chroot_run "id -u lyra >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,dialout,plugdev,netdev,spi,gpio,i2c lyra"
+chroot_run "usermod -aG sudo,dialout,plugdev,netdev,spi,gpio,i2c lyra 2>/dev/null || true"
 chroot_run "echo 'lyra:lyra' | chpasswd"
 mkdir -p "$MNT/home/lyra/.ssh"
 if [ -f "$SSH_PUBKEY_FILE" ]; then
@@ -288,6 +291,26 @@ announce_interval = 360
 public = r:all
 EOF
 
+# --- 7d. INA3221 + env sensors (MOTD cache + LXMF beacon to The Spot) --------
+# Optional hardware: TI INA3221 @0x40 (power rails), MeshAdv Mini TMP102 @0x48
+# (hat temp, local MOTD only), BME/BMP280 @0x76/0x77 (ambient → collector).
+# Scripts no-op gracefully when chips are absent. Beacon targets collector
+# dest in config.json (The Spot default); edit display_name / collector after
+# first boot. Identity under ~/.ina3221 is wiped on first boot like other apps.
+echo "Installing INA3221 / env sensor stack..."
+mkdir -p "$MNT/home/lyra/ina3221"
+cp "$HERE/files/ina3221/read_ina3221.py" \
+   "$HERE/files/ina3221/sensors_i2c.py" \
+   "$HERE/files/ina3221/ina3221-beacon.py" \
+   "$HERE/files/ina3221/config.json" \
+   "$MNT/home/lyra/ina3221/"
+chmod 755 "$MNT/home/lyra/ina3221/read_ina3221.py" \
+          "$MNT/home/lyra/ina3221/sensors_i2c.py" \
+          "$MNT/home/lyra/ina3221/ina3221-beacon.py"
+chmod 644 "$MNT/home/lyra/ina3221/config.json"
+mkdir -p "$MNT/home/lyra/.ina3221" "$MNT/home/lyra/.cache"
+# State dirs only — identity created on first beacon run.
+
 # --- 8. systemd services ------------------------------------------------------
 echo "Deploying systemd services..."
 cp "$HERE/files/nomadnet.service" "$MNT/etc/systemd/system/nomadnet.service"
@@ -295,6 +318,11 @@ cp "$HERE/files/rngit.service" "$MNT/etc/systemd/system/rngit.service"
 cp "$HERE/files/rnsh.service" "$MNT/etc/systemd/system/rnsh.service"
 cp "$HERE/files/telemetry-collector.service" "$MNT/etc/systemd/system/telemetry-collector.service"
 cp "$HERE/files/retibbs.service" "$MNT/etc/systemd/system/retibbs.service"
+# Sensor timers: cache feeds MOTD; beacon sends FIELD_TELEMETRY via shared RNS.
+cp "$HERE/files/ina3221/ina3221-cache.service" "$MNT/etc/systemd/system/ina3221-cache.service"
+cp "$HERE/files/ina3221/ina3221-cache.timer" "$MNT/etc/systemd/system/ina3221-cache.timer"
+cp "$HERE/files/ina3221/ina3221-beacon.service" "$MNT/etc/systemd/system/ina3221-beacon.service"
+cp "$HERE/files/ina3221/ina3221-beacon.timer" "$MNT/etc/systemd/system/ina3221-beacon.timer"
 # rnsh's allowlist directory - empty by default (accepts no connections
 # until a hash is added), created here so ownership/perms are correct
 # before rnsh's first run generates its listener identity into it. The
@@ -350,6 +378,9 @@ cp "$HERE/files/reticulum-mesh-ctl" "$MNT/usr/local/bin/reticulum-mesh-ctl"
 chmod +x "$MNT/usr/local/bin/reticulum-mesh-ctl"
 cp "$HERE/files/reticulum-mesh.service" "$MNT/etc/systemd/system/reticulum-mesh.service"
 chroot_run "systemctl enable reticulum-mesh.service first-boot.service"
+# Sensor stack always enabled: cache timer is cheap; beacon is oneshot and
+# exits cleanly when no INA/mesh path (Meshtastic-only boards simply skip).
+chroot_run "systemctl enable ina3221-cache.timer ina3221-beacon.timer"
 # Disable (don't uninstall) the graphical boot target - this is a headless node.
 chroot_run "systemctl set-default multi-user.target"
 

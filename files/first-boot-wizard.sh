@@ -23,7 +23,7 @@ if [ "${1:-}" = "--noninteractive-only" ]; then
     if [ -f "$MARKER_IDENTITY" ]; then
         exit 0
     fi
-    echo "Wiping any pre-existing Reticulum/NomadNet/rngit/telemetry/retibbs identities..."
+    echo "Wiping any pre-existing Reticulum/NomadNet/rngit/telemetry/retibbs/ina3221 identities..."
     rm -f /home/lyra/.reticulum/storage/identity 2>/dev/null || true
     rm -rf /home/lyra/.reticulum/storage/destination_table 2>/dev/null || true
     rm -f /home/lyra/.nomadnetwork/storage/identity 2>/dev/null || true
@@ -33,6 +33,10 @@ if [ "${1:-}" = "--noninteractive-only" ]; then
     rm -f /home/lyra/.telemetry-collector/state.json 2>/dev/null || true
     rm -rf /home/lyra/.telemetry-collector/lxmf_storage 2>/dev/null || true
     rm -f /home/lyra/.retibbs/identity.pem 2>/dev/null || true
+    # INA3221 LXMF beacon identity (must be unique per card)
+    rm -f /home/lyra/.ina3221/identity 2>/dev/null || true
+    rm -rf /home/lyra/.ina3221/lxmf_storage 2>/dev/null || true
+    rm -f /home/lyra/.cache/ina3221.json 2>/dev/null || true
     runuser -u lyra -- /usr/local/bin/rrcd --configdir /home/lyra/.reticulum --hub-name "The Spot" --greeting "Welcome to The Spot's chat lounge." >/dev/null 2>&1 || true
     date -Iseconds > "$MARKER_IDENTITY"
     exit 0

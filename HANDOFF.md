@@ -552,3 +552,21 @@ sudo dd if=files/u-boot-rockchip-keyed.bin of=/dev/sdX bs=32k seek=1 conv=notrun
 ```
 
 WiFi bake unchanged (`LYRA_WIFI_SSID` / `LYRA_WIFI_PSK`).
+
+### INA3221 + env sensors baked (2026-09-06)
+
+Verified on **lyra3** (solar enclosure): INA3221 @0x40 (ch1=solar ch2=bat
+ch3=system), MeshAdv Mini TMP102 @0x48 (hat MOTD only), BME280 @0x77 (ambient
+→ collector; temp supersedes TMP102).
+
+**Image bake** (`build-lyra-gold-image.sh` §7d):
+- apt: `python3-smbus` (+ existing `i2c-tools`); `lyra` in `i2c` group
+- `/home/lyra/ina3221/` scripts + `config.json` (display_name=lyra, collector
+  The Spot `da424e0f47657d7575df58a2b83b111b`)
+- timers enabled: `ina3221-cache.timer` (1 min MOTD), `ina3221-beacon.timer`
+  (10 min LXMF FIELD_TELEMETRY)
+- first-boot wipes `~/.ina3221/identity` + lxmf_storage + cache
+- MOTD via `motd-raspi.sh` reads `~/.cache/ina3221.json`
+
+Absent chips are skipped (no hard fail). Edit labels/collector/display_name
+on each node after first boot.

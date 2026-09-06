@@ -129,14 +129,18 @@ clear
 
 # Set when pinmux overlay changes; reboot is offered at END of wizard
 # (after rnsh allowlist etc), not immediately after HAT select.
+# IMPORTANT: apply_hat_choice must NOT run under $() — that is a subshell and
+# REBOOT_NEEDED=1 would be lost (wizard ends after passwd with no reboot ask).
 REBOOT_NEEDED=0
+APPLIED_HAT=""
 
 # Apply the chosen HAT (writes lyra-hardware.conf, updates RNS config if
 # needed, and runs lyra-hat-pinmux apply to switch /boot/armbianEnv.txt's
 # user_overlays). $1 is the chosen HAT key (e.g. "meshadv-pi-hat-v1.1" or
 # "station-g3"); $2 is the RNS radio_board name to write (same key in
 # practice); $3 is the pinmux-overlay profile name to apply
-# ("meshadv", "meshadv-mini", or "station-g3"). Echoes the chosen radio_board name.
+# ("meshadv", "meshadv-mini", or "station-g3").
+# Sets globals: APPLIED_HAT, REBOOT_NEEDED (on pinmux change).
 # On pinmux change: informational msgbox only (no reboot prompt here).
 apply_hat_choice() {
     local choice="$1"          # wizard key, used as radio_board
@@ -204,7 +208,7 @@ ${msg}"
         clear
     fi
 
-    echo "$choice"
+    APPLIED_HAT="$choice"
 }
 
 # Map a wizard HAT key to the lyra-hat-pinmux profile name.
@@ -233,7 +237,9 @@ if [ "$MODE" = "reticulum" ]; then
         "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN — different overlay)" \
         3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear
-    HAT=$(apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")")
+    # Do NOT use HAT=$(apply_hat_choice ...) — subshell drops REBOOT_NEEDED.
+    apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")"
+    HAT="$APPLIED_HAT"
     echo "board=$BOARD hat=$HAT -> /etc/lyra-hardware.conf written; Reticulum radio_board updated"
 
     # --- rnsh remote-shell access -------------------------------------
@@ -298,7 +304,9 @@ elif [ "$MODE" = "meshtastic" ]; then
         "station-g3"         "BQ/Uniteng Station G3 (pin16 = RXEN — different overlay)" \
         3>&1 1>&2 2>&3) || HAT="meshadv-pi-hat-v1.1"
     clear
-    HAT=$(apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")")
+    # Do NOT use HAT=$(apply_hat_choice ...) — subshell drops REBOOT_NEEDED.
+    apply_hat_choice "$HAT" "$HAT" "$(pinmux_profile_for_hat "$HAT")"
+    HAT="$APPLIED_HAT"
     echo "board=lyra-zero-w hat=$HAT -> /etc/lyra-hardware.conf written; Meshtastic HAT selected"
     systemctl disable --now reticulum-mesh.service
     systemctl disable nomadnet.service rngit.service rrcd.service telemetry-collector.service retibbs.service rnsh.service 2>/dev/null || true

@@ -302,14 +302,18 @@ mkdir -p "$MNT/home/lyra/ina3221"
 cp "$HERE/files/ina3221/read_ina3221.py" \
    "$HERE/files/ina3221/sensors_i2c.py" \
    "$HERE/files/ina3221/ina3221-beacon.py" \
+   "$HERE/files/ina3221/ina3221-powerguard.py" \
    "$HERE/files/ina3221/config.json" \
    "$MNT/home/lyra/ina3221/"
 chmod 755 "$MNT/home/lyra/ina3221/read_ina3221.py" \
           "$MNT/home/lyra/ina3221/sensors_i2c.py" \
-          "$MNT/home/lyra/ina3221/ina3221-beacon.py"
+          "$MNT/home/lyra/ina3221/ina3221-beacon.py" \
+          "$MNT/home/lyra/ina3221/ina3221-powerguard.py"
 chmod 644 "$MNT/home/lyra/ina3221/config.json"
-mkdir -p "$MNT/home/lyra/.ina3221" "$MNT/home/lyra/.cache"
+mkdir -p "$MNT/home/lyra/.ina3221" "$MNT/home/lyra/.cache" \
+         "$MNT/var/lib/lyra"
 # State dirs only — identity created on first beacon run.
+# Powerguard state lives under /var/lib/lyra (root-owned).
 
 # --- 8. systemd services ------------------------------------------------------
 echo "Deploying systemd services..."
@@ -319,10 +323,13 @@ cp "$HERE/files/rnsh.service" "$MNT/etc/systemd/system/rnsh.service"
 cp "$HERE/files/telemetry-collector.service" "$MNT/etc/systemd/system/telemetry-collector.service"
 cp "$HERE/files/retibbs.service" "$MNT/etc/systemd/system/retibbs.service"
 # Sensor timers: cache feeds MOTD; beacon sends FIELD_TELEMETRY via shared RNS.
+# Powerguard: soft-stop reticulum-mesh at low bat, restore when charged (no OS poweroff).
 cp "$HERE/files/ina3221/ina3221-cache.service" "$MNT/etc/systemd/system/ina3221-cache.service"
 cp "$HERE/files/ina3221/ina3221-cache.timer" "$MNT/etc/systemd/system/ina3221-cache.timer"
 cp "$HERE/files/ina3221/ina3221-beacon.service" "$MNT/etc/systemd/system/ina3221-beacon.service"
 cp "$HERE/files/ina3221/ina3221-beacon.timer" "$MNT/etc/systemd/system/ina3221-beacon.timer"
+cp "$HERE/files/ina3221/ina3221-powerguard.service" "$MNT/etc/systemd/system/ina3221-powerguard.service"
+cp "$HERE/files/ina3221/ina3221-powerguard.timer" "$MNT/etc/systemd/system/ina3221-powerguard.timer"
 # rnsh's allowlist directory - empty by default (accepts no connections
 # until a hash is added), created here so ownership/perms are correct
 # before rnsh's first run generates its listener identity into it. The
@@ -380,7 +387,8 @@ cp "$HERE/files/reticulum-mesh.service" "$MNT/etc/systemd/system/reticulum-mesh.
 chroot_run "systemctl enable reticulum-mesh.service first-boot.service"
 # Sensor stack always enabled: cache timer is cheap; beacon is oneshot and
 # exits cleanly when no INA/mesh path (Meshtastic-only boards simply skip).
-chroot_run "systemctl enable ina3221-cache.timer ina3221-beacon.timer"
+# Powerguard is cheap (1/min oneshot); no-ops if INA absent or powerguard.enabled=false.
+chroot_run "systemctl enable ina3221-cache.timer ina3221-beacon.timer ina3221-powerguard.timer"
 # Disable (don't uninstall) the graphical boot target - this is a headless node.
 chroot_run "systemctl set-default multi-user.target"
 

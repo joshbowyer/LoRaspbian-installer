@@ -564,9 +564,31 @@ ch3=system), MeshAdv Mini TMP102 @0x48 (hat MOTD only), BME280 @0x77 (ambient
 - `/home/lyra/ina3221/` scripts + `config.json` (display_name=lyra, collector
   The Spot `da424e0f47657d7575df58a2b83b111b`)
 - timers enabled: `ina3221-cache.timer` (1 min MOTD), `ina3221-beacon.timer`
-  (10 min LXMF FIELD_TELEMETRY)
+  (10 min LXMF FIELD_TELEMETRY), `ina3221-powerguard.timer` (1 min soft-stop)
 - first-boot wipes `~/.ina3221/identity` + lxmf_storage + cache
-- MOTD via `motd-raspi.sh` reads `~/.cache/ina3221.json`
+- MOTD via `motd-raspi.sh` reads `~/.cache/ina3221.json` (Power/Env/Hat + Bat Guard)
+
+### Battery powerguard (two-stage, no OS poweroff) — 2026-09-08
+
+After lyra3 overnight crash left `armbianEnv.txt` and LXMF ratchets all-zero
+(bat telem ~2.8 V), soft-stop mesh before the charge board UVLO hard-cuts:
+
+| | |
+|---|---|
+| Script | `ina3221-powerguard.py` (root oneshot) |
+| Unit | `ina3221-powerguard.timer` every 60s (OnBootSec=90s) |
+| Stop | `bat` ≤ **3.0 V** for 2 consecutive polls → `systemctl stop reticulum-mesh` + `sync` |
+| Restore | `bat` ≥ **3.4 V** for 2 polls → `systemctl start reticulum-mesh` |
+| Never | `poweroff` / `halt` / `shutdown` (UVLO still kills; board restores power) |
+| State | `/var/lib/lyra/ina3221-powerguard.state` (atomic write) |
+| Config | `config.json` → `powerguard` block (`enabled`, `bat_label`, thresholds) |
+
+MOTD shows **Bat Guard** when cache has `powerguard_mode` (powerguard annotates
+cache on each run). Disable: set `powerguard.enabled=false` or
+`systemctl disable --now ina3221-powerguard.timer`.
+
+Deploy live boards: scp script+units+config, `systemctl daemon-reload &&
+systemctl enable --now ina3221-powerguard.timer`.
 
 Absent chips are skipped (no hard fail). Edit labels/collector/display_name
 on each node after first boot.

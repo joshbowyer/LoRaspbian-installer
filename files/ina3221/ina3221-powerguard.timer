@@ -1,0 +1,12 @@
+[Unit]
+Description=INA3221 battery powerguard every minute
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=15s
+Unit=ina3221-powerguard.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

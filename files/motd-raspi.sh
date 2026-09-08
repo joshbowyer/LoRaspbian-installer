@@ -261,6 +261,18 @@ if d.get("temp_c") is not None:
     print("ENV|" + " ".join(env_bits))
 if d.get("tmp102_c") is not None:
     print(f"HAT|{float(d['tmp102_c']):.1f}C TMP102")
+# Soft-stop powerguard (annotated by ina3221-powerguard when it runs)
+pg_mode = d.get("powerguard_mode")
+if pg_mode:
+    stop_v = d.get("powerguard_stop_v")
+    rest_v = d.get("powerguard_restore_v")
+    thr = ""
+    try:
+        if stop_v is not None and rest_v is not None:
+            thr = f" stop<={float(stop_v):.1f} restore>={float(rest_v):.1f}"
+    except (TypeError, ValueError):
+        thr = ""
+    print(f"PG|{pg_mode}{thr}")
 PY
 )"
   _INA_NOTE=""
@@ -268,6 +280,7 @@ PY
   _INA_POWER="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^POWER|//p' | head -1)"
   _INA_ENV="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^ENV|//p' | head -1)"
   _INA_HAT="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^HAT|//p' | head -1)"
+  _INA_PG="$(printf '%s\n' "$_INA_PARSE" | sed -n 's/^PG|//p' | head -1)"
   if [ -n "$_INA_POWER" ]; then
     _kv "Power" "$_INA_POWER$_INA_NOTE" "$_GREEN"
   fi
@@ -276,6 +289,11 @@ PY
   fi
   if [ -n "$_INA_HAT" ]; then
     _kv "Hat Temp" "$_INA_HAT$_INA_NOTE" "$_GOLD"
+  fi
+  if [ -n "$_INA_PG" ]; then
+    _PG_COLOR="$_GREEN"
+    case "$_INA_PG" in stopped*) _PG_COLOR="$_CORAL" ;; esac
+    _kv "Bat Guard" "$_INA_PG$_INA_NOTE" "$_PG_COLOR"
   fi
 fi
 

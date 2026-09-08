@@ -76,6 +76,12 @@ LXMF telemetry. Optional hardware on I2C0 (pins 3/5):
 - Cache timer (1 min) → `~/.cache/ina3221.json` → login MOTD Power/Env lines
 - Beacon timer (10 min) → The Spot collector `da424e0f…` (edit
   `config.json` `display_name` / `collector` / channel labels after first boot)
+- **Powerguard** timer (1 min, root): soft-stop `reticulum-mesh` when `bat` ≤
+  `stop_v` (default **3.0 V**, 2 samples), restore when `bat` ≥ `restore_v`
+  (default **3.4 V**). **No OS poweroff** — charge-board UVLO still cuts power;
+  on reboot mesh comes back if voltage is healthy. Toggle via
+  `config.json` → `powerguard.enabled`. Status: MOTD **Bat Guard** line or
+  `sudo python3 ~/ina3221/ina3221-powerguard.py --status`
 - Manual: `python3 ~/ina3221/read_ina3221.py`
 
 **rnsh over LoRa:** character-mode PTY is painful at SF7 (~5.5 kbps). Upstream

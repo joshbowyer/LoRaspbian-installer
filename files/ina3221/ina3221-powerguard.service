@@ -1,0 +1,13 @@
+[Unit]
+Description=INA3221 battery soft-stop / restore (no OS poweroff)
+After=local-fs.target
+# Do not order After reticulum-mesh — we may stop/start it.
+
+[Service]
+Type=oneshot
+# Root: systemctl stop/start reticulum-mesh + sync
+User=root
+Group=root
+WorkingDirectory=/home/lyra/ina3221
+ExecStart=/usr/bin/python3 /home/lyra/ina3221/ina3221-powerguard.py -c /home/lyra/ina3221/config.json
+Nice=10

@@ -21,5 +21,15 @@
   "send_timeout_s": 90,
   "tmp102_address": "0x48",
   "read_env_sensors": true,
-  "bme280_address": "0x77"
+  "bme280_address": "0x77",
+  "powerguard": {
+    "enabled": true,
+    "bat_label": "bat",
+    "stop_v": 3.0,
+    "restore_v": 3.4,
+    "stop_samples": 2,
+    "restore_samples": 2,
+    "state_path": "/var/lib/lyra/ina3221-powerguard.state",
+    "update_cache": true
+  }
 }

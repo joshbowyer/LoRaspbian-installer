@@ -94,6 +94,62 @@ trim_space() {
 	printf '%s' "$1" | tr -s ' \t' ' '
 }
 
+# Atomic rewrite of armbianEnv.txt.
+# sed -i truncates then rewrites in place; a power cut mid-write can leave the
+# file all 0x00 (seen 2026-09-08 on lyra3) which bricks boot with solid red LED
+# even when KEYED U-Boot is intact. Write tmp → fsync → rename instead.
+write_armbian_env() {
+	local content=$1
+	local dir tmp
+	dir=$(dirname -- "$ARMBIAN_ENV")
+	tmp=$(mktemp "${dir}/.armbianEnv.txt.XXXXXX")
+	# Refuse to install empty/all-null content
+	if [ -z "${content//$'\n'/}" ]; then
+		rm -f "$tmp"
+		err "ERROR: refusing to write empty ${ARMBIAN_ENV}"
+		return 1
+	fi
+	printf '%s' "$content" > "$tmp"
+	# Ensure trailing newline
+	[ -n "$content" ] && [ "${content: -1}" != $'\n' ] && printf '\n' >> "$tmp"
+	# Sanity: must contain rootdev= or fdtfile= (Armbian boot essentials)
+	if ! grep -qE '^(rootdev|fdtfile)=' "$tmp"; then
+		rm -f "$tmp"
+		err "ERROR: refusing to write ${ARMBIAN_ENV} missing rootdev=/fdtfile="
+		return 1
+	fi
+	sync "$tmp" 2>/dev/null || true
+	mv -f "$tmp" "$ARMBIAN_ENV"
+	sync "$(dirname -- "$ARMBIAN_ENV")" 2>/dev/null || sync || true
+}
+
+set_user_overlays_line() {
+	local new_list=$1
+	local content
+	if [ ! -f "$ARMBIAN_ENV" ]; then
+		err "ERROR: ${ARMBIAN_ENV} does not exist; cannot set user_overlays"
+		return 2
+	fi
+	if grep -q '^[[:space:]]*user_overlays[[:space:]]*=' "$ARMBIAN_ENV"; then
+		content=$(awk -v nl="$new_list" '
+			BEGIN { done=0 }
+			/^[[:space:]]*user_overlays[[:space:]]*=/ {
+				print "user_overlays=" nl
+				done=1
+				next
+			}
+			{ print }
+			END {
+				if (!done) print "user_overlays=" nl
+			}
+		' "$ARMBIAN_ENV")
+	else
+		content=$(cat "$ARMBIAN_ENV")
+		content="${content}"$'\n'"user_overlays=${new_list}"
+	fi
+	write_armbian_env "$content"
+}
+
 get_user_overlays() {
 	if [ -f "$ARMBIAN_ENV" ]; then
 		awk -F= '
@@ -309,19 +365,10 @@ cmd_apply() {
 
 	new_list=$(trim_space "${new_list:+${new_list} }${overlay_wanted}")
 
-	if [ -f "$ARMBIAN_ENV" ] && grep -q '^[[:space:]]*user_overlays[[:space:]]*=' "$ARMBIAN_ENV"; then
-		local escaped
-		escaped=$(printf '%s' "$new_list" | sed 's/[&|]/\\&/g')
-		sed -i "s|^[[:space:]]*user_overlays[[:space:]]*=.*|user_overlays=${escaped}|" "$ARMBIAN_ENV"
-	else
-		if [ ! -f "$ARMBIAN_ENV" ]; then
-			err "ERROR: ${ARMBIAN_ENV} does not exist; cannot set user_overlays"
-			exit 2
-		fi
-		printf '\nuser_overlays=%s\n' "$new_list" >> "$ARMBIAN_ENV"
-	fi
+	set_user_overlays_line "$new_list" || exit $?
 
 	date -Iseconds > "$REBOOT_FLAG"
+	sync "$REBOOT_FLAG" 2>/dev/null || true
 	sync_fiq_getty "$desired"
 
 	local active_after

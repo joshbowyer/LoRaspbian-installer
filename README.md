@@ -144,7 +144,7 @@ base image every time, instead of hand-configuring a live board over SSH.
 
 | Component | Status |
 |---|---|
-| WiFi (aic8800 chip, rfkill soft-block, netplan) | Hardware-verified, working |
+| WiFi (aic8800 USB, rfkill + BT power GPIO) | Hardware-verified; boot heal re-unblocks after power-loss state corruption |
 | SPI0 remapped to the Pi's header pinout | **Hardware-verified** — `/dev/spidev0.0` working |
 | MeshAdv **Pi Hat** v1.1 (CS40 RST12) | **Hardware-verified** — SX126x Up, mesh traffic |
 | MeshAdv **Mini** LoRa (CS24 RST18 RXEN32) | **Hardware-verified** — KEYED U-Boot + SX126x Up + LXMF 1-hop LoRa |
@@ -167,6 +167,8 @@ files/                     # payloads copied into the image during build
   sx126x_boards            # MeshAdv Mini board profile (cs24 …)
   first-boot-wizard.sh     # WiFi / Reticulum|Meshtastic / HAT select
   lyra-hat-pinmux          # apply one HAT overlay to armbianEnv.txt
+  lyra-rfkill-unblock.sh   # heal corrupted systemd-rfkill state; power AIC BT GPIO
+  lyra-rfkill-unblock.service
   ina3221/                 # power + env sensors (MOTD + LXMF beacon)
   *.service                # nomadnet/rngit/rrcd/rnsh/telemetry/retibbs/mesh
 dts-overlay/               # HAT pinmux overlays (mutually exclusive)

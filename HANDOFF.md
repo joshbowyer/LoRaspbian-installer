@@ -162,10 +162,16 @@ Stages (abbreviated — read the script itself for exact commands):
 8. Deploy systemd services (nomadnet, rngit, first-boot)
 9. Base Reticulum config (includes the `[[MeshAdv LoRa]]` interface block)
    - WiFi bake-in (interactive prompt or `LYRA_WIFI_SSID`/`LYRA_WIFI_PSK` env vars)
-   - rfkill soft-block pre-seed (writes `/var/lib/systemd/rfkill/*` = `0`
-     directly, does NOT run `rfkill unblock` in the chroot — that would
-     incorrectly touch the *host build machine's* real rfkill state since
-     `/sys` is bind-mounted from the host)
+    - rfkill soft-block pre-seed (writes `/var/lib/systemd/rfkill/*` = `0`
+      directly, does NOT run `rfkill unblock` in the chroot — that would
+      incorrectly touch the *host build machine's* real rfkill state since
+      `/sys` is bind-mounted from the host)
+    - **lyra-rfkill-unblock.service** (boot heal): power-loss can ALLZERO or
+      soft-block those state files. On Lyra Zero W the USB AIC8800DC is powered
+      via BT rfkill GPIO (`bt_default_poweron` / gpio-53). If BT stays blocked,
+      AIC never enumerates → no `wlan0`. Heal rewrites valid `0\n` states and
+      runs `rfkill unblock` early (`Before=network-pre`). Respects
+      `/etc/lyra-security-hardened` (keeps WiFi blocked).
    - Compiles + installs the devicetree overlay (`dtc` on the host — no qemu
      needed, dtc is architecture-independent) and updates the chroot's
      `armbianEnv.txt` with `user_overlays=lyra-zero-w-pi-header`
@@ -592,3 +598,26 @@ systemctl enable --now ina3221-powerguard.timer`.
 
 Absent chips are skipped (no hard fail). Edit labels/collector/display_name
 on each node after first boot.
+
+### WiFi / AIC rfkill heal (2026-09-09)
+
+**Symptom:** board boots, LoRa/rnsh OK, but `ip a` has no `wlan0` and no
+ping/SSH over LAN. Serial console still works (FIQ @ 1500000).
+
+**Root cause:** power-loss can corrupt `/var/lib/systemd/rfkill/*` (ALLZERO or
+invalid). systemd-rfkill then soft-blocks Bluetooth → `gpio-53 bt_default_poweron`
+stays **out lo** → onboard USB AIC8800DC never powers/enumerates (no
+`a69c:88dc` in `lsusb`) → no wlan0. Gold image seeds those files to `0`, but
+corruption undoes the seed.
+
+**Immediate fix (live):**
+```bash
+sudo /usr/sbin/rfkill unblock bluetooth
+sudo /usr/sbin/rfkill unblock all
+# optional: echo 0 > /sys/class/rfkill/rfkill0/soft
+sudo netplan apply
+```
+
+**Image fix:** `lyra-rfkill-unblock.service` early oneshot heals state files
+atomically and unblocks BT/WiFi before `network-pre`. Deployed on lyra2;
+baked into gold via build script next to §9c.

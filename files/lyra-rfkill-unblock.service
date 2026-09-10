@@ -1,0 +1,23 @@
+[Unit]
+Description=Heal/unblock Lyra AIC8800 BT+WiFi rfkill (power AIC USB)
+Documentation=file:///usr/local/sbin/lyra-rfkill-unblock.sh
+# Run early so BT power GPIO is high before USB AIC enumerates and before
+# systemd waits on sys-subsystem-net-devices-wlan0.device (90s timeout).
+DefaultDependencies=no
+After=local-fs.target systemd-rfkill.service
+Before=network-pre.target network.target multi-user.target
+Wants=local-fs.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lyra-rfkill-unblock.sh
+# Brief settle so AIC can enumerate before networkd/wpa race units.
+ExecStartPost=/bin/sleep 2
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=network-pre.target

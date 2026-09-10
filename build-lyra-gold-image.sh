@@ -464,6 +464,14 @@ fi
 echo 0 > "$MNT/var/lib/systemd/rfkill/platform-ff780000.usb-usb-0:1.1:1.0:bluetooth"
 echo 0 > "$MNT/var/lib/systemd/rfkill/platform-wireless-bluetooth:bluetooth"
 
+# Boot-time heal: power-loss can ALLZERO or soft-block systemd-rfkill state files.
+# On Lyra Zero W the USB AIC8800DC is powered via BT rfkill GPIO (bt_default_poweron);
+# if BT stays soft-blocked, AIC never enumerates → no wlan0. Seed files alone are
+# not enough after corruption — re-heal + rfkill unblock early every boot.
+install -m 755 "$HERE/files/lyra-rfkill-unblock.sh" "$MNT/usr/local/sbin/lyra-rfkill-unblock.sh"
+cp "$HERE/files/lyra-rfkill-unblock.service" "$MNT/etc/systemd/system/lyra-rfkill-unblock.service"
+chroot_run "systemctl enable lyra-rfkill-unblock.service"
+
 # --- 9e. Security hardening: mask serial console, mark done ------------------
 if [ "$LYRA_SECURITY_HARDEN" = "yes" ]; then
     echo "Masking serial console for unattended deployment..."

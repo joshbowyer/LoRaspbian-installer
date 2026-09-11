@@ -621,3 +621,33 @@ sudo netplan apply
 **Image fix:** `lyra-rfkill-unblock.service` early oneshot heals state files
 atomically and unblocks BT/WiFi before `network-pre`. Deployed on lyra2;
 baked into gold via build script next to §9c.
+
+### MeshAdv Mini LoRa ↑0B recovery (2026-09-11) — lyra3
+
+**Full write-up:** `/home/josh/Reticulum/docs/24-lyra3-meshadv-mini-lora-recovery-handoff.md`
+
+**Symptom:** SX126x interface Up, SPI/I2C OK, but `rnstatus` LoRa **↑0 B ↓0 B**.
+Master (`~/.rngit/server_log`) showed rebroadcasts then
+`CSMA gave up after 50 attempts (channel busy)`.
+
+**Root causes (software, not dead SX126x):**
+1. After DIO3 TCXO `calibrate(0xFF)`, **packet type stayed GFSK (0)** — CAD never
+   completes → CSMA wedges TX. Mini always uses TCXO 1.8 V.
+2. `set_frequency`/image cal can drop packet type again — must re-assert LoRa.
+3. `set_tx_enable`/`set_rx_enable` broken when `txen=-1` (Mini): RXEN never dropped on TX.
+4. CAD host wait too brittle; fail-open if CAD IRQ never latches.
+
+**Fixed sources:** `reticulum-stack/dev/reticulum-hat-mod/{vendored_sx126x.py,SX126xInterface.py}`  
+**Deploy:** copy both to `~/.reticulum/interfaces/`, wipe `__pycache__`, restart `reticulum-mesh`.
+
+**Gold-image / installer TODO:**
+- Vendor updated hat-mod interfaces into image
+- Keep `meshadv-mini` board profile + `pin_cs=-1` + mini overlay (never pi-hat RST on pin 12)
+- Smoke: log `packet_type after init=1`; after announce SX126x ↑/↓ non-zero
+- lyra3 recovered live: ↑/↓ KB and RX_DONE with lyra1 air peer
+
+**Quick node roll:**
+```bash
+scp vendored_sx126x.py SX126xInterface.py lyra@TARGET:~/.reticulum/interfaces/
+ssh lyra@TARGET 'rm -rf ~/.reticulum/interfaces/__pycache__; sudo systemctl restart reticulum-mesh'
+```
